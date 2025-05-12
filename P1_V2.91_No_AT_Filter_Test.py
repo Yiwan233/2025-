@@ -466,8 +466,197 @@ except Exception as e_feat_eng_v2_9:
 print("--- 步骤 3 完成 ---")
 
 # --- 步骤 4 & 5: 模型评估 (框架) ---
-print(f"\n--- 步骤 4 & 5: 模型评估 (版本 2.9) ---")
-# <<<<< 在此插入或确保你的模型训练和评估代码, 输入为 df_features_v2_9 >>>>>
-print("--- 步骤 4 & 5 (框架) 完成 ---")
+# --- 步骤 4: 模型训练与验证 (版本 2.9) ---
+print(f"\n--- 步骤 4: 模型训练与验证 (版本 2.9) ---")
+
+try:
+    from sklearn.model_selection import train_test_split, cross_val_score, KFold
+    from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+    import xgboost as xgb
+    from sklearn.preprocessing import LabelEncoder
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    
+    # 准备数据
+    X = df_features_v2_9.drop(['Sample File', 'NoC_True'], axis=1)
+    y = df_features_v2_9['NoC_True']
+    
+    # 将NoC_True转换为整数类型，确保它是分类标签
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+    
+    # 划分训练集和测试集
+    X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.3, random_state=42, stratify=y_encoded)
+    
+    print(f"训练集维度: {X_train.shape}, 测试集维度: {X_test.shape}")
+    
+    # 定义XGBoost分类器
+    xgb_model = xgb.XGBClassifier(
+        objective='multi:softmax',
+        num_class=len(np.unique(y_encoded)),
+        learning_rate=0.1,
+        max_depth=4,
+        min_child_weight=2,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        n_estimators=100,
+        random_state=42
+    )
+    
+    # K折交叉验证
+    kfold = KFold(n_splits=5, shuffle=True, random_state=42)
+    cv_scores = cross_val_score(xgb_model, X, y_encoded, cv=kfold, scoring='accuracy')
+    print(f"交叉验证准确率: {cv_scores.mean():.4f} (±{cv_scores.std():.4f})")
+    
+    # 在完整训练集上训练最终模型
+    xgb_model.fit(
+        X_train, y_train,
+        eval_set=[(X_train, y_train), (X_test, y_test)],
+        eval_metric='mlogloss',
+        early_stopping_rounds=20,
+        verbose=False
+    )
+    
+    # 在测试集上预测
+    y_pred = xgb_model.predict(X_test)
+    
+    # 计算模型性能指标
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"测试集准确率: {accuracy:.4f}")
+    
+    # 输出分类报告
+    class_names = [f"{i}人" for i in label_encoder.classes_]
+    print("\n分类报告:")
+    print(classification_report(y_test, y_pred, target_names=class_names))
+    
+    # 绘制混淆矩阵
+    plt.figure(figsize=(10, 8))
+    cm = confusion_matrix(y_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel('预测标签')
+    plt.ylabel('真实标签')
+    plt.title('混淆矩阵')
+    confusion_matrix_path = os.path.join(PLOTS_DIR, 'confusion_matrix_v2.9.png')
+    plt.savefig(confusion_matrix_path)
+    print(f"混淆矩阵已保存至: {confusion_matrix_path}")
+    
+    # 特征重要性分析
+    plt.figure(figsize=(12, 6))
+    xgb.plot_importance(xgb_model, max_num_features=10)
+    plt.title('特征重要性')
+    feature_importance_path = os.path.join(PLOTS_DIR, 'feature_importance_v2.9.png')
+    plt.savefig(feature_importance_path)
+    print(f"特征重要性图已保存至: {feature_importance_path}")
+    
+    # 将训练好的模型应用于全部数据并保存预测结果
+    df_features_v2_9['baseline_pred'] = xgb_model.predict(X)
+    df_features_v2_9['baseline_pred'] = label_encoder.inverse_transform(df_features_v2_9['baseline_pred'].astype(int))
+    
+    # 保存更新后的特征文件
+    df_features_v2_9.to_csv(feature_filename_prob1, index=False, encoding='utf-8-sig')
+    print(f"带预测结果的特征数据已保存至: {feature_filename_prob1}")
+    
+    # 保存模型
+    model_filename = os.path.join(DATA_DIR, 'noc_xgboost_model_v2.9.json')
+    xgb_model.save_model(model_filename)
+    print(f"XGBoost模型已保存至: {model_filename}")
+    
+except ModuleNotFoundError as e:
+    print(f"错误: 缺少必要的库 - {e}")
+    print("请安装所需库: pip install xgboost scikit-learn matplotlib seaborn")
+except Exception as e_model:
+    print(f"模型训练过程中发生错误: {e_model}")
+    import traceback
+    traceback.print_exc()
+
+print("--- 步骤 4 完成 ---")
+
+# --- 步骤 5: 模型评估与结果分析 ---
+print(f"\n--- 步骤 5: 模型评估与结果分析 (版本 2.9) ---")
+
+try:
+    # 计算每个NoC类别的预测准确率
+    noc_accuracy = df_features_v2_9.groupby('NoC_True').apply(
+        lambda x: (x['baseline_pred'] == x['NoC_True']).mean()
+    ).reset_index(name='准确率')
+    
+    print("\n各NoC类别预测准确率:")
+    print_df_in_chinese(noc_accuracy, title="NoC类别准确率统计")
+    
+    # 可视化NoC预测准确率
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x='NoC_True', y='准确率', data=noc_accuracy)
+    plt.ylim(0, 1.1)
+    plt.xlabel('真实贡献者人数')
+    plt.ylabel('预测准确率')
+    plt.title('各贡献者人数类别的预测准确率')
+    
+    for i, row in noc_accuracy.iterrows():
+        plt.text(i, row['准确率'] + 0.03, f"{row['准确率']:.2f}", ha='center')
+    
+    noc_accuracy_path = os.path.join(PLOTS_DIR, 'noc_accuracy_v2.9.png')
+    plt.savefig(noc_accuracy_path)
+    print(f"NoC预测准确率图已保存至: {noc_accuracy_path}")
+    
+    # 将移除AT预过滤的结果与之前版本进行比较
+    try:
+        # 尝试加载V2.8的结果进行比较
+        prev_feature_file = os.path.join(DATA_DIR, 'prob1_features_v2.8.1.csv')
+        if os.path.exists(prev_feature_file):
+            df_prev = pd.read_csv(prev_feature_file, encoding='utf-8-sig')
+            
+            if 'baseline_pred' in df_prev.columns and 'NoC_True' in df_prev.columns:
+                prev_accuracy = (df_prev['baseline_pred'] == df_prev['NoC_True']).mean()
+                current_accuracy = (df_features_v2_9['baseline_pred'] == df_features_v2_9['NoC_True']).mean()
+                
+                print(f"\n版本比较:")
+                print(f"V2.8.1 总体准确率: {prev_accuracy:.4f}")
+                print(f"V2.9 (移除AT预过滤) 总体准确率: {current_accuracy:.4f}")
+                print(f"准确率变化: {(current_accuracy - prev_accuracy) * 100:.2f}%")
+                
+                # 创建版本比较柱状图
+                plt.figure(figsize=(8, 6))
+                versions = ['V2.8.1', 'V2.9 (无AT预过滤)']
+                accuracies = [prev_accuracy, current_accuracy]
+                
+                sns.barplot(x=versions, y=accuracies)
+                plt.ylim(0, 1.1)
+                plt.ylabel('总体准确率')
+                plt.title('移除AT预过滤前后的模型准确率比较')
+                
+                for i, acc in enumerate(accuracies):
+                    plt.text(i, acc + 0.03, f"{acc:.4f}", ha='center')
+                
+                version_comparison_path = os.path.join(PLOTS_DIR, 'version_comparison_v2.9.png')
+                plt.savefig(version_comparison_path)
+                print(f"版本比较图已保存至: {version_comparison_path}")
+        else:
+            print("未找到之前版本的特征文件，无法进行比较分析。")
+    except Exception as e_compare:
+        print(f"比较分析过程中发生错误: {e_compare}")
+    
+    # 保存最终的分析结果摘要
+    summary = {
+        "脚本版本": "2.9 (移除AT预过滤)",
+        "总体准确率": (df_features_v2_9['baseline_pred'] == df_features_v2_9['NoC_True']).mean(),
+        "样本数": len(df_features_v2_9),
+        "特征数": X.shape[1],
+        "NoC类别数": len(np.unique(y)),
+        "主要修改": "移除了Stutter分析中基于AT的预过滤，所有峰高大于1 RFU的峰都进入分析流程",
+        "生成时间": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    summary_file = os.path.join(DATA_DIR, 'prob1_analysis_summary_v2.9.json')
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, ensure_ascii=False, indent=4)
+    
+    print(f"分析摘要已保存至: {summary_file}")
+    
+except Exception as e_eval:
+    print(f"模型评估过程中发生错误: {e_eval}")
+    import traceback
+    traceback.print_exc()
+
+print("--- 步骤 5 完成 ---")
 
 print(f"\n脚本 {os.path.basename(__file__)} (版本 2.9) 执行完毕。")
