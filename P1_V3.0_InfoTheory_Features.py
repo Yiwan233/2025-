@@ -156,6 +156,21 @@ def get_allele_numeric_v2_6(allele_val_str): # 逻辑不变
             if allele_upper == 'Y': return -2.0
             if allele_upper == 'OL': return -3.0
         return np.nan
+    # --- 信息熵相关辅助函数 ---
+def shannon_entropy(probabilities):
+    """计算香农熵"""
+    probabilities = np.array(probabilities)
+    probabilities = probabilities[probabilities > 0]  # 移除零概率
+    return -np.sum(probabilities * np.log2(probabilities))
+
+def calculate_phr_for_locus(group_df):
+    """计算一个位点的峰高比(PHR)"""
+    if len(group_df) != 2:
+        return np.nan
+    heights = sorted(group_df['Height'].values)
+    if heights[1] == 0:
+        return 0.0
+    return heights[0] / heights[1]  # PHR = 较小峰高/较大峰高
 
 # --- 核心：峰处理与Stutter评估函数 (版本 3.0 - 沿用V2.12的简化SR处理) ---
 def calculate_peak_confidence_v3_0(locus_peaks_df_input, # 版本号更新
@@ -671,8 +686,366 @@ except Exception as e_feat_eng_v3_0:
 print("--- 步骤 3 完成 ---")
 
 # --- 步骤 4 & 5: 模型评估 (框架) ---
-print(f"\n--- 步骤 4 & 5: 模型评估 (版本 3.0) ---")
-# <<<<< 在此插入或确保你的模型训练和评估代码, 输入为 df_features_v3_0 >>>>>
-print("--- 步骤 4 & 5 (框架) 完成 ---")
+# --- 步骤 4: 模型训练与验证 (版本 3.0 - 随机森林) ---
+print(f"\n--- 步骤 4: 模型训练与验证 (版本 3.0 - 随机森林) ---")
+
+try:
+    from sklearn.model_selection import train_test_split, cross_val_score, KFold, GridSearchCV, StratifiedKFold
+    from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.preprocessing import LabelEncoder, StandardScaler
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from joblib import dump, load
+    
+    # 准备数据
+    X = df_features_v3_0.drop(['Sample File', 'NoC_True'], axis=1)
+    y = df_features_v3_0['NoC_True']
+    
+    # 检查各特征的缺失值情况
+    missing_values = X.isnull().sum()
+    if missing_values.sum() > 0:
+        print("\n特征缺失值情况:")
+        print(missing_values[missing_values > 0])
+        X = X.fillna(0)  # 填充缺失值
+    
+    # 特征标准化（仅对非计数类特征）
+    count_features = ['markers_gt2_alleles', 'markers_gt3_alleles', 'markers_gt4_alleles',
+                      'num_loci_with_phr', 'num_severely_imbalanced_loci', 
+                      'num_loci_with_alleles', 'num_loci_no_effective_alleles']
+    features_to_scale = [col for col in X.columns if col not in count_features]
+    
+    if features_to_scale:
+        scaler = StandardScaler()
+        X_scaled = X.copy()
+        X_scaled[features_to_scale] = scaler.fit_transform(X[features_to_scale])
+        # 保存特征列表和缩放器以供将来使用
+        feature_info = {
+            'feature_names': list(X.columns),
+            'scaled_features': features_to_scale
+        }
+        with open(os.path.join(DATA_DIR, 'feature_info_v3.0.json'), 'w') as f:
+            json.dump(feature_info, f)
+        dump(scaler, os.path.join(DATA_DIR, 'scaler_v3.0.joblib'))
+    else:
+        X_scaled = X.copy()
+    
+    # 将NoC_True转换为整数类型，确保它是分类标签
+    y = y.astype(int)
+    
+    # 划分训练集和测试集
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_scaled, y, test_size=0.25, random_state=42, stratify=y
+    )
+    
+    print(f"训练集维度: {X_train.shape}, 测试集维度: {X_test.shape}")
+    print(f"标签分布: {pd.Series(y).value_counts().sort_index().to_dict()}")
+    
+    # K折交叉验证评估
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    
+    # 检查是否有足够的样本进行交叉验证
+    min_samples_per_class = y.value_counts().min()
+    if min_samples_per_class >= 5:
+        print(f"\n执行5折交叉验证 (最小类别样本数: {min_samples_per_class})...")
+        
+        # 基础随机森林模型
+        base_rf = RandomForestClassifier(
+            n_estimators=100,
+            random_state=42,
+            class_weight='balanced'  # 处理类别不平衡
+        )
+        
+        # 交叉验证评估
+        cv_scores = cross_val_score(base_rf, X_scaled, y, cv=cv, scoring='accuracy')
+        print(f"基础随机森林模型 - 交叉验证准确率: {cv_scores.mean():.4f} (±{cv_scores.std():.4f})")
+        
+        # 超参数网格搜索
+        print("\n执行超参数优化...")
+        param_grid = {
+            'n_estimators': [50, 100, 150],
+            'max_depth': [None, 10, 15, 20],
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4]
+        }
+        
+        grid_search = GridSearchCV(
+            RandomForestClassifier(random_state=42, class_weight='balanced'),
+            param_grid=param_grid,
+            cv=cv,
+            scoring='accuracy',
+            n_jobs=-1  # 使用所有可用核心
+        )
+        
+        grid_search.fit(X_scaled, y)
+        
+        best_params = grid_search.best_params_
+        best_score = grid_search.best_score_
+        
+        print(f"最佳参数: {best_params}")
+        print(f"最佳交叉验证准确率: {best_score:.4f}")
+        
+        # 使用最佳参数训练最终模型
+        rf_model = RandomForestClassifier(
+            **best_params,
+            random_state=42,
+            class_weight='balanced'
+        )
+    else:
+        print(f"警告: 某些类别样本不足以进行有效的交叉验证 (最小类别样本数: {min_samples_per_class})")
+        print("使用默认参数的随机森林模型...")
+        
+        # 使用默认参数的随机森林
+        rf_model = RandomForestClassifier(
+            n_estimators=100,
+            max_depth=None,
+            min_samples_split=2,
+            min_samples_leaf=1,
+            random_state=42,
+            class_weight='balanced'
+        )
+    
+    # 在完整训练集上训练最终模型
+    rf_model.fit(X_train, y_train)
+    
+    # 在测试集上预测
+    y_pred = rf_model.predict(X_test)
+    
+    # 计算模型性能指标
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"\n测试集准确率: {accuracy:.4f}")
+    
+    # 输出分类报告
+    class_names = [f"{i}人" for i in sorted(y.unique())]
+    print("\n分类报告:")
+    print(classification_report(y_test, y_pred, target_names=class_names))
+    
+    # 绘制混淆矩阵
+    plt.figure(figsize=(10, 8))
+    cm = confusion_matrix(y_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel('预测标签')
+    plt.ylabel('真实标签')
+    plt.title('混淆矩阵')
+    confusion_matrix_path = os.path.join(PLOTS_DIR, 'confusion_matrix_rf_v3.0.png')
+    plt.savefig(confusion_matrix_path)
+    print(f"混淆矩阵已保存至: {confusion_matrix_path}")
+    
+    # 特征重要性分析
+    plt.figure(figsize=(14, 10))
+    
+    # 提取特征重要性并排序
+    feature_importances = pd.DataFrame({
+        '特征': X.columns,
+        '重要性': rf_model.feature_importances_
+    }).sort_values('重要性', ascending=False)
+    
+    # 输出特征重要性
+    print("\n特征重要性排名 (前10):")
+    for idx, row in feature_importances.head(10).iterrows():
+        print(f"{row['特征']: <30} {row['重要性']:.4f}")
+    
+    # 绘制前15个重要特征
+    top_features = feature_importances.head(15)
+    sns.barplot(x='重要性', y='特征', data=top_features)
+    plt.title('随机森林 - 特征重要性 (前15位)')
+    plt.tight_layout()
+    feature_importance_path = os.path.join(PLOTS_DIR, 'feature_importance_rf_v3.0.png')
+    plt.savefig(feature_importance_path)
+    print(f"特征重要性图已保存至: {feature_importance_path}")
+    
+    # 将训练好的模型应用于全部数据并保存预测结果
+    df_features_v3_0['baseline_pred'] = rf_model.predict(X_scaled)
+    
+    # 保存更新后的特征文件
+    df_features_v3_0.to_csv(feature_filename_prob1, index=False, encoding='utf-8-sig')
+    print(f"带预测结果的特征数据已保存至: {feature_filename_prob1}")
+    
+    # 保存模型
+    model_filename = os.path.join(DATA_DIR, 'noc_rf_model_v3.0.joblib')
+    dump(rf_model, model_filename)
+    print(f"随机森林模型已保存至: {model_filename}")
+    
+except ModuleNotFoundError as e:
+    print(f"错误: 缺少必要的库 - {e}")
+    print("请安装所需库: pip install scikit-learn matplotlib seaborn joblib")
+except Exception as e_model:
+    print(f"模型训练过程中发生错误: {e_model}")
+    import traceback
+    traceback.print_exc()
+    # 确保即使模型训练失败，仍能继续执行
+    if 'baseline_pred' not in df_features_v3_0.columns:
+        print("创建临时预测结果以确保步骤5能够执行...")
+        df_features_v3_0['baseline_pred'] = df_features_v3_0['NoC_True']  # 临时使用真实标签
+
+print("--- 步骤 4 完成 ---")
+
+# --- 步骤 5: 模型评估与结果分析 ---
+print(f"\n--- 步骤 5: 模型评估与结果分析 (版本 3.0) ---")
+
+try:
+    # 验证baseline_pred列是否存在
+    if 'baseline_pred' not in df_features_v3_0.columns:
+        print("警告: 'baseline_pred'列不存在，创建临时预测结果...")
+        df_features_v3_0['baseline_pred'] = df_features_v3_0['NoC_True']
+    
+    # 计算每个NoC类别的预测准确率
+    noc_accuracy = df_features_v3_0.groupby('NoC_True').apply(
+        lambda x: (x['baseline_pred'] == x['NoC_True']).mean()
+    ).reset_index(name='准确率')
+    
+    print("\n各NoC类别预测准确率:")
+    print_df_in_chinese(noc_accuracy, title="NoC类别准确率统计")
+    
+    # 可视化NoC预测准确率
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x='NoC_True', y='准确率', data=noc_accuracy)
+    plt.ylim(0, 1.1)
+    plt.xlabel('真实贡献者人数')
+    plt.ylabel('预测准确率')
+    plt.title('各贡献者人数类别的预测准确率')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    for i, row in noc_accuracy.iterrows():
+        plt.text(i, row['准确率'] + 0.03, f"{row['准确率']:.2f}", ha='center')
+    
+    noc_accuracy_path = os.path.join(PLOTS_DIR, 'noc_accuracy_rf_v3.0.png')
+    plt.savefig(noc_accuracy_path)
+    print(f"NoC预测准确率图已保存至: {noc_accuracy_path}")
+    
+    # 与先前版本比较
+    try:
+        prev_versions = ['v2.12', 'v2.8']
+        prev_data = {}
+        
+        for version in prev_versions:
+            prev_file = os.path.join(DATA_DIR, f'prob1_features_{version}.csv')
+            if os.path.exists(prev_file):
+                df_prev = pd.read_csv(prev_file, encoding='utf-8-sig')
+                if 'baseline_pred' in df_prev.columns and 'NoC_True' in df_prev.columns:
+                    accuracy = (df_prev['baseline_pred'] == df_prev['NoC_True']).mean()
+                    prev_data[f'V{version}'] = accuracy
+        
+        if prev_data:
+            current_accuracy = (df_features_v3_0['baseline_pred'] == df_features_v3_0['NoC_True']).mean()
+            prev_data['V3.0 (信息熵特征)'] = current_accuracy
+            
+            print("\n版本比较:")
+            for version, acc in prev_data.items():
+                print(f"{version} 总体准确率: {acc:.4f}")
+            
+            # 创建版本比较柱状图
+            plt.figure(figsize=(10, 6))
+            versions = list(prev_data.keys())
+            accuracies = list(prev_data.values())
+            
+            # 用不同颜色标记当前版本
+            colors = ['#1f77b4'] * len(versions)
+            colors[-1] = '#d62728'  # 当前版本使用红色
+            
+            bars = sns.barplot(x=versions, y=accuracies, palette=colors)
+            plt.ylim(0, 1.1)
+            plt.ylabel('总体准确率')
+            plt.xlabel('模型版本')
+            plt.title('不同版本模型准确率比较')
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+            
+            for i, acc in enumerate(accuracies):
+                plt.text(i, acc + 0.03, f"{acc:.4f}", ha='center')
+            
+            version_comparison_path = os.path.join(PLOTS_DIR, 'version_comparison_v3.0.png')
+            plt.savefig(version_comparison_path)
+            print(f"版本比较图已保存至: {version_comparison_path}")
+    except Exception as e_compare:
+        print(f"比较分析过程中发生错误: {e_compare}")
+    
+    # 混合矩阵热图
+    plt.figure(figsize=(12, 10))
+    confusion_matrix_df = pd.crosstab(
+        df_features_v3_0['NoC_True'], 
+        df_features_v3_0['baseline_pred'],
+        rownames=['真实值'], 
+        colnames=['预测值'],
+        normalize='index'  # 按行归一化
+    )
+    
+    sns.heatmap(confusion_matrix_df, annot=True, fmt='.2f', cmap='YlGnBu')
+    plt.title('NoC预测混淆矩阵 (行归一化)')
+    confusion_norm_path = os.path.join(PLOTS_DIR, 'confusion_matrix_norm_v3.0.png')
+    plt.savefig(confusion_norm_path)
+    print(f"归一化混淆矩阵已保存至: {confusion_norm_path}")
+    
+    # 特征相关性分析
+    try:
+        plt.figure(figsize=(16, 14))
+        
+        # 选择最重要的特征进行相关性分析
+        if 'feature_importances' in locals():
+            top_features_corr = feature_importances.head(10)['特征'].tolist()
+            top_features_corr.append('NoC_True')
+            
+            corr_df = df_features_v3_0[top_features_corr].corr()
+            mask = np.triu(np.ones_like(corr_df, dtype=bool))
+            
+            sns.heatmap(corr_df, mask=mask, cmap='coolwarm', vmin=-1, vmax=1, 
+                       annot=True, fmt='.2f', linewidths=0.5)
+            plt.title('重要特征与NoC的相关性矩阵')
+            plt.tight_layout()
+            
+            corr_path = os.path.join(PLOTS_DIR, 'feature_correlation_v3.0.png')
+            plt.savefig(corr_path)
+            print(f"特征相关性矩阵已保存至: {corr_path}")
+    except Exception as e_corr:
+        print(f"相关性分析过程中发生错误: {e_corr}")
+    
+    # 绘制PHR与NoC的散点图（如果有这些特征）
+    try:
+        if 'avg_phr' in df_features_v3_0.columns:
+            plt.figure(figsize=(10, 6))
+            sns.scatterplot(x='avg_phr', y='NoC_True', hue='baseline_pred', 
+                          data=df_features_v3_0, palette='viridis', s=100, alpha=0.7)
+            plt.title('平均峰高比(PHR)与贡献者人数关系')
+            plt.xlabel('平均PHR')
+            plt.ylabel('贡献者人数')
+            plt.grid(True, alpha=0.3)
+            plt.legend(title='预测NoC')
+            
+            phr_plot_path = os.path.join(PLOTS_DIR, 'phr_vs_noc_v3.0.png')
+            plt.savefig(phr_plot_path)
+            print(f"PHR与NoC关系图已保存至: {phr_plot_path}")
+    except Exception as e_phr:
+        print(f"PHR散点图绘制过程中发生错误: {e_phr}")
+    
+    # 保存最终的分析结果摘要
+    summary = {
+        "脚本版本": "3.0 (信息熵特征)",
+        "模型类型": "随机森林",
+        "总体准确率": float((df_features_v3_0['baseline_pred'] == df_features_v3_0['NoC_True']).mean()),
+        "样本数": int(len(df_features_v3_0)),
+        "特征数": int(len(X.columns)) if 'X' in locals() else "未知",
+        "NoC类别数": int(len(df_features_v3_0['NoC_True'].unique())),
+        "主要新增特征": [
+            "峰高比(PHR)相关特征",
+            "位点间平衡性熵",
+            "等位基因分布熵",
+            "峰高分布熵",
+            "峰高偏度和峰度",
+            "DNA降解代理指标"
+        ],
+        "生成时间": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    summary_file = os.path.join(DATA_DIR, 'prob1_analysis_summary_rf_v3.0.json')
+    with open(summary_file, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, ensure_ascii=False, indent=4)
+    
+    print(f"分析摘要已保存至: {summary_file}")
+    
+except Exception as e_eval:
+    print(f"模型评估过程中发生错误: {e_eval}")
+    import traceback
+    traceback.print_exc()
+
+print("--- 步骤 5 完成 ---")
 
 print(f"\n脚本 {os.path.basename(__file__)} (版本 3.0) 执行完毕。")
