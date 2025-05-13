@@ -833,12 +833,14 @@ except Exception as e_eval:
 
 print("--- 步骤 5 完成 ---")
 
-# --- 添加SHAP值分析（修复版） ---
-print("\n--- SHAP值分析 ---")
+# --- 添加SHAP值分析（修复数组转换错误版）---
+# --- 添加极简SHAP值分析 ---
+print("\n--- SHAP值分析 (极简版) ---")
 
 try:
     import shap
     import numpy as np
+    import pandas as pd
     
     # 检查是否有训练好的随机森林模型
     if 'rf_model' in locals() and 'X_train' in locals():
@@ -847,176 +849,94 @@ try:
         # 创建一个解释器
         explainer = shap.TreeExplainer(rf_model)
         
-        # 计算SHAP值 (使用测试集或一个小样本以加快速度)
-        if len(X_test) > 50:
-            print(f"使用测试集的前50个样本计算SHAP值以提高效率")
-            X_shap = X_test.iloc[:50].copy()
-            shap_values = explainer.shap_values(X_shap)
-        else:
-            X_shap = X_test.copy()
-            shap_values = explainer.shap_values(X_shap)
-        
-        # 获取样本的预期类别数 (对于多分类问题，shap_values是一个列表)
-        if isinstance(shap_values, list):
-            print(f"检测到多分类问题，共{len(shap_values)}个类别")
-        
-        # 1. SHAP摘要图 - 显示特征的整体重要性和影响方向
-        plt.figure(figsize=(12, 10))
-        if isinstance(shap_values, list):
-            # 多分类情况：选择最有意义的类别进行展示
-            # 这里选择样本最多的类别
-            class_counts = pd.Series(y).value_counts()
-            most_common_class = class_counts.idxmax()
-            most_common_idx = list(sorted(np.unique(y))).index(most_common_class)
-            
-            print(f"绘制类别 {most_common_class} 的SHAP摘要图（样本数最多的类别）")
-            shap.summary_plot(shap_values[most_common_idx], X_shap, plot_type="bar", show=False)
-            plt.title(f"SHAP特征重要性 - 类别 {most_common_class}")
-        else:
-            # 回归或二分类情况
-            shap.summary_plot(shap_values, X_shap, plot_type="bar", show=False)
-            plt.title("SHAP特征重要性")
-        
-        plt.tight_layout()
-        shap_summary_path = os.path.join(PLOTS_DIR, 'shap_summary_v2.91.png')
-        plt.savefig(shap_summary_path)
-        print(f"SHAP摘要图已保存至: {shap_summary_path}")
-        
-        # 2. SHAP依赖图 - 显示特征值如何影响预测
-        # 为前3个最重要的特征创建依赖图
-        if isinstance(shap_values, list):
-            # 多分类情况，使用选定类别的SHAP值
-            feature_importance = np.abs(shap_values[most_common_idx]).mean(axis=0)
-        else:
-            feature_importance = np.abs(shap_values).mean(axis=0)
-        
-        # 修复：使用argsort和列表推导来获取前三个特征
-        top_indices = np.argsort(-feature_importance)
-        # 转换为Python列表并获取前三个索引
-        top_indices_list = top_indices.tolist()[:3]
-        # 获取对应的特征名
+        # 使用小样本量计算SHAP值
+        sample_size = min(30, len(X_test))
+        X_shap = X_test.iloc[:sample_size].copy()
         feature_names = list(X_shap.columns)
-        top_features = [feature_names[i] for i in top_indices_list]
         
-        print(f"绘制前3个重要特征的SHAP依赖图: {', '.join(top_features)}")
+        # 获取SHAP值
+        shap_values = explainer.shap_values(X_shap)
         
-        for feature in top_features:
-            plt.figure(figsize=(10, 6))
-            feature_idx = feature_names.index(feature)
-            
-            if isinstance(shap_values, list):
-                shap.dependence_plot(
-                    feature_idx, 
-                    shap_values[most_common_idx], 
-                    X_shap.values,  # 使用.values获取NumPy数组
-                    feature_names=feature_names,
-                    show=False
-                )
-                plt.title(f"SHAP依赖图 - {feature} (类别 {most_common_class})")
-            else:
-                shap.dependence_plot(
-                    feature_idx, 
-                    shap_values, 
-                    X_shap.values,  # 使用.values获取NumPy数组
-                    feature_names=feature_names,
-                    show=False
-                )
-                plt.title(f"SHAP依赖图 - {feature}")
-            
-            plt.tight_layout()
-            shap_dependence_path = os.path.join(PLOTS_DIR, f'shap_dependence_{feature.replace(" ", "_")}_v2.91.png')
-            plt.savefig(shap_dependence_path)
-            print(f"SHAP依赖图 ({feature}) 已保存至: {shap_dependence_path}")
+        # 检查是否是多分类问题
+        is_multiclass = isinstance(shap_values, list)
+        print(f"模型类型: {'多分类' if is_multiclass else '二分类/回归'}")
         
-        # 3. SHAP综合摘要图
-        plt.figure(figsize=(12, 8))
-        if isinstance(shap_values, list):
-            shap.summary_plot(shap_values[most_common_idx], X_shap, show=False)
-            plt.title(f"SHAP摘要图 - 类别 {most_common_class}")
+        # 获取要使用的SHAP值
+        if is_multiclass:
+            # 对于多分类，使用第一个类别
+            selected_values = shap_values[0]
         else:
-            shap.summary_plot(shap_values, X_shap, show=False)
-            plt.title("SHAP摘要图")
+            selected_values = shap_values
         
+        # 计算每个特征的平均SHAP值
+        mean_values = []
+        for i in range(X_shap.shape[1]):
+            col_values = selected_values[:, i]
+            mean_val = np.mean(col_values)
+            mean_values.append((i, mean_val, abs(mean_val)))
+        
+        # 根据绝对值大小排序
+        sorted_features = sorted(mean_values, key=lambda x: x[2], reverse=True)
+        
+        # 选择前8个特征
+        top_limit = min(8, len(sorted_features))
+        top_features = sorted_features[:top_limit]
+        
+        # 提取特征名称和SHAP值
+        feature_labels = []
+        shap_means = []
+        
+        for idx, mean_val, _ in top_features:
+            feature_labels.append(feature_names[idx])
+            shap_means.append(mean_val)
+        
+        # 绘制特征影响对比图
+        plt.figure(figsize=(12, 8))
+        
+        # 颜色设置
+        colors = ['#FF4136' if x > 0 else '#0074D9' for x in shap_means]
+        
+        # 绘制水平条形图
+        positions = list(range(len(feature_labels)))
+        plt.barh(positions, shap_means, color=colors)
+        plt.yticks(positions, feature_labels)
+        plt.xlabel('SHAP value (impact on model output)')
+        plt.ylabel('Feature name')
+        plt.axvline(x=0, color='black', linestyle='-', alpha=0.3)
+        plt.title('Impact of Features on DNA Contributors Prediction (NoC)')
+        plt.grid(axis='x', linestyle='--', alpha=0.3)
+        
+        # 保存图形
         plt.tight_layout()
-        shap_summary_full_path = os.path.join(PLOTS_DIR, 'shap_summary_full_v2.91.png')
-        plt.savefig(shap_summary_full_path)
-        print(f"SHAP综合摘要图已保存至: {shap_summary_full_path}")
+        shap_impact_path = os.path.join(PLOTS_DIR, 'shap_impact_v2.91.png')
+        plt.savefig(shap_impact_path)
+        print(f"特征影响对比图已保存至: {shap_impact_path}")
         
-        # 4. 为具体样本创建SHAP瀑布图 (替代力图)
+        # 尝试创建基本SHAP摘要图
         try:
-            # 选择每个NoC类别的一个代表性样本
-            sample_indices = []
-            y_test_array = np.array(y_test)
-            for noc in sorted(np.unique(y_test_array)):
-                # 为每个NoC类别选择1个样本
-                class_indices = np.where(y_test_array == noc)[0]
-                if len(class_indices) > 0:
-                    sample_indices.append(class_indices[0])
-            
-            if sample_indices and len(sample_indices) > 0:
-                print(f"为{len(sample_indices)}个不同NoC类别的样本创建SHAP瀑布图")
-                for i, idx in enumerate(sample_indices):
-                    plt.figure(figsize=(10, 6))
-                    
-                    if isinstance(shap_values, list):
-                        # 多分类情况
-                        true_class = y_test_array[idx]
-                        true_class_idx = list(sorted(np.unique(y))).index(true_class)
-                        
-                        # 确保索引有效
-                        if idx < len(X_test):
-                            sample_shap_values = shap_values[true_class_idx][min(idx, len(shap_values[true_class_idx])-1)]
-                            sample_data = X_test.iloc[idx].values if idx < len(X_test) else X_test.iloc[0].values
-                            
-                            shap.plots.waterfall(
-                                shap.Explanation(
-                                    values=sample_shap_values,
-                                    base_values=explainer.expected_value[true_class_idx],
-                                    data=sample_data,
-                                    feature_names=feature_names
-                                ),
-                                show=False,
-                                max_display=10  # 显示前10个特征
-                            )
-                            plt.title(f"样本 #{idx} (真实NoC: {true_class}) 的SHAP瀑布图")
-                    else:
-                        # 二分类或回归情况
-                        if idx < len(X_test):
-                            sample_shap_values = shap_values[min(idx, len(shap_values)-1)]
-                            sample_data = X_test.iloc[idx].values if idx < len(X_test) else X_test.iloc[0].values
-                            
-                            shap.plots.waterfall(
-                                shap.Explanation(
-                                    values=sample_shap_values,
-                                    base_values=explainer.expected_value,
-                                    data=sample_data,
-                                    feature_names=feature_names
-                                ),
-                                show=False,
-                                max_display=10  # 显示前10个特征
-                            )
-                            plt.title(f"样本 #{idx} 的SHAP瀑布图")
-                    
-                    plt.tight_layout()
-                    shap_waterfall_path = os.path.join(PLOTS_DIR, f'shap_waterfall_noc{y_test_array[idx]}_v2.91.png')
-                    plt.savefig(shap_waterfall_path)
-                    print(f"NoC={y_test_array[idx]}的SHAP瀑布图已保存至: {shap_waterfall_path}")
-        except Exception as e_waterfall:
-            print(f"创建SHAP瀑布图过程中发生错误: {e_waterfall}")
-            print("继续执行其他SHAP分析...")
+            plt.figure(figsize=(12, 10))
+            shap.summary_plot(selected_values, X_shap, plot_type="bar", show=False)
+            plt.title("SHAP特征重要性")
+            plt.tight_layout()
+            shap_summary_path = os.path.join(PLOTS_DIR, 'shap_summary_v2.91.png')
+            plt.savefig(shap_summary_path)
+            print(f"SHAP摘要图已保存至: {shap_summary_path}")
+        except Exception as e:
+            print(f"创建SHAP摘要图失败: {e}")
         
-        # 保存SHAP值分析结果
+        # 保存分析结果
         shap_analysis = {
-            "top_features": top_features,
-            "expected_value": explainer.expected_value.tolist() if isinstance(explainer.expected_value, np.ndarray) else float(explainer.expected_value),
+            "top_features": feature_labels,
             "analysis_date": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
-        shap_analysis_file = os.path.join(DATA_DIR, 'shap_analysis_v2.91.json')
-        with open(shap_analysis_file, 'w', encoding='utf-8') as f:
-            json.dump(shap_analysis, f, ensure_ascii=False, indent=4)
-        
-        print(f"SHAP分析结果已保存至: {shap_analysis_file}")
+        try:
+            shap_analysis_file = os.path.join(DATA_DIR, 'shap_analysis_v2.91.json')
+            with open(shap_analysis_file, 'w', encoding='utf-8') as f:
+                json.dump(shap_analysis, f, ensure_ascii=False, indent=4)
+            print(f"SHAP分析结果已保存至: {shap_analysis_file}")
+        except Exception as e_save:
+            print(f"保存SHAP分析结果时发生错误: {e_save}")
         
     else:
         print("未找到随机森林模型或训练数据，无法计算SHAP值")
@@ -1029,5 +949,4 @@ except Exception as e_shap:
     traceback.print_exc()
 
 print("--- SHAP分析完成 ---")
-
 print(f"\n脚本 {os.path.basename(__file__)} (版本 2.9) 执行完毕。")

@@ -1,0 +1,13 @@
+{
+    "top_features": [
+        "avg_alleles_per_marker",
+        "total_alleles_per_sample",
+        "avg_peak_height",
+        "markers_gt4_alleles",
+        "std_peak_height",
+        "max_allele_per_sample",
+        "markers_gt2_alleles",
+        "markers_gt3_alleles"
+    ],
+    "analysis_date": "2025-05-13 22:41:09"
+}
