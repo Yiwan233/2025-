@@ -1,0 +1,38 @@
+{
+  "model_type": "Support Vector Machine",
+  "feature_importance": [
+    {
+      "name": "avg_alleles_per_marker",
+      "importance": 0.032768942335176715
+    },
+    {
+      "name": "markers_gt4_alleles",
+      "importance": 0.032591147060718875
+    },
+    {
+      "name": "total_alleles_per_sample",
+      "importance": 0.031926470694107395
+    },
+    {
+      "name": "max_allele_per_sample",
+      "importance": 0.028810644633911683
+    },
+    {
+      "name": "markers_gt2_alleles",
+      "importance": 0.02709031891673397
+    },
+    {
+      "name": "std_peak_height",
+      "importance": 0.02346664033815376
+    },
+    {
+      "name": "avg_peak_height",
+      "importance": 0.02015589990480754
+    },
+    {
+      "name": "markers_gt3_alleles",
+      "importance": 0.011269064132614044
+    }
+  ],
+  "timestamp": "2025-05-14 20:17:41"
+}
