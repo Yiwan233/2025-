@@ -888,43 +888,56 @@ print("--- 步骤 5 完成 ---")
 # --- 高斯过程的SHAP值分析 ---
 # --- 高斯过程的SHAP值分析 ---
 # --- SVM的SHAP值分析 ---
-print("\n--- 支持向量机模型SHAP值分析 ---")
+# --- 增强的SVM SHAP值分析，整合部分依赖图 (PDP) ---
+# --- 增强的SVM SHAP值分析，整合部分依赖图 (PDP) ---
+# --- 增强的SVM SHAP值分析，整合部分依赖图 (PDP) ---
+# --- 增强的SVM SHAP值分析，整合部分依赖图 (PDP) ---
+print("\n--- 增强型支持向量机模型SHAP和PDP分析 ---")
 
 try:
     import shap
     import numpy as np
     import matplotlib.pyplot as plt
+    from sklearn.inspection import PartialDependenceDisplay
+    import time
+    import os
+    from itertools import product
     
     # 检查是否有训练好的SVM模型
-    if 'best_svm' in locals() and 'X_test' in locals():
-        print("正在计算支持向量机模型的SHAP值...")
+    if 'best_svm' in locals() and 'X_test' in locals() and 'X_train' in locals():
+        print("正在计算支持向量机模型的SHAP值和部分依赖图...")
         
+        # --- SHAP分析部分 ---
         # 对于SVM，使用KernelExplainer
-        # 由于计算复杂度高，我们使用较小的样本量
         sample_size = min(50, len(X_test))
         X_sample = X_test.iloc[:sample_size].copy()
         
+        # 定义一个简单的包装函数，使模型兼容SHAP
+        def model_predict(X_input):
+            return best_svm.predict_proba(X_input)
+            
         # 使用K-means生成背景数据集来加速计算
+        print("创建背景数据集...")
         background = shap.kmeans(X_train, 10)
         
         # 创建解释器
         print("创建SHAP解释器...")
         explainer = shap.KernelExplainer(
-            model=best_svm.predict_proba, 
+            model=model_predict, 
             data=background,
             link="logit"
         )
         
         # 计算SHAP值
         print("计算样本的SHAP值 (这可能需要一些时间)...")
-        # 使用较小的nsamples值以加速计算
         shap_values = explainer.shap_values(X_sample, nsamples=100)
         
         # 检查SHAP值是否为多类别
         is_multiclass = isinstance(shap_values, list)
         print(f"SHAP值类型是否为多类别列表: {is_multiclass}")
         
-        # 创建汇总图
+        # --- 汇总可视化 ---
+        # 创建SHAP汇总图
         plt.figure(figsize=(12, 10))
         
         if is_multiclass:
@@ -937,6 +950,7 @@ try:
                 show=False,
                 plot_size=(12, 8)
             )
+            plt.title(f"SVM模型 - 类别{class_to_explain}的SHAP值特征重要性")
         else:
             # 二分类问题
             print("显示整体SHAP值汇总图")
@@ -946,15 +960,16 @@ try:
                 show=False,
                 plot_size=(12, 8)
             )
+            plt.title("SVM模型 - SHAP值特征重要性")
         
-        plt.title("SVM模型 - SHAP值特征重要性")
         plt.tight_layout()
         summary_path = os.path.join(PLOTS_DIR, 'svm_shap_summary_v2.91.png')
         plt.savefig(summary_path)
         plt.close()
         print(f"SHAP值汇总图已保存至: {summary_path}")
         
-        # 创建SHAP条形图 - 显示特征重要性
+        # --- 条形图可视化 ---
+        # 创建SHAP条形图
         plt.figure(figsize=(12, 8))
         if is_multiclass:
             shap.summary_plot(
@@ -978,142 +993,381 @@ try:
         plt.close()
         print(f"SHAP值条形图已保存至: {bar_path}")
         
-        # 计算特征重要性并保存
-        try:
-            feature_importance = {}
-            
-            # 不同处理多分类和二分类情况
-            if is_multiclass:
-                num_classes = len(shap_values)
-                print(f"多分类问题，共 {num_classes} 个类别")
-                
-                # 计算每个特征在所有类别中的重要性
-                for feature_idx, feature_name in enumerate(X_sample.columns):
-                    # 计算所有类别的平均绝对SHAP值
-                    values = []
-                    for class_idx in range(num_classes):
-                        values.append(np.abs(shap_values[class_idx][:, feature_idx]).mean())
-                    
-                    # 取平均值作为最终重要性得分
-                    feature_importance[feature_name] = float(np.mean(values))
-            else:
-                # 二分类问题
-                for feature_idx, feature_name in enumerate(X_sample.columns):
-                    feature_importance[feature_name] = float(np.abs(shap_values[:, feature_idx]).mean())
-            
-            # 按重要性排序
-            sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-            
-            # 显示前10个重要特征
-            print("\nSVM模型的前10个重要特征:")
-            for name, imp in sorted_importance[:10]:
-                print(f"{name}: {imp:.6f}")
-            
-            # 可视化前10个特征重要性
-            plt.figure(figsize=(12, 6))
-            names = [x[0] for x in sorted_importance[:10]]
-            values = [x[1] for x in sorted_importance[:10]]
-            
-            plt.barh(range(len(names)), values, align='center')
-            plt.yticks(range(len(names)), names)
-            plt.xlabel('特征重要性（平均|SHAP值|）')
-            plt.title('SVM模型 - 前10个重要特征')
-            plt.tight_layout()
-            
-            top_features_path = os.path.join(PLOTS_DIR, 'svm_top_features_v2.91.png')
-            plt.savefig(top_features_path)
-            plt.close()
-            print(f"前10个重要特征图已保存至: {top_features_path}")
-            
-            # 保存特征重要性为JSON
-            import json
-            feature_imp_data = {
-                "model_type": "Support Vector Machine",
-                "feature_importance": [{"name": name, "importance": imp} 
-                                    for name, imp in sorted_importance],
-                "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            
-            feature_imp_file = os.path.join(DATA_DIR, 'svm_feature_importance_v2.91.json')
-            with open(feature_imp_file, 'w', encoding='utf-8') as f:
-                json.dump(feature_imp_data, f, ensure_ascii=False, indent=2)
-            
-            print(f"特征重要性数据已保存至: {feature_imp_file}")
+        # --- 单特征散点图 ---
+        # 为每个重要特征创建SHAP散点图
+        feature_importance = {}
         
-        except Exception as e_imp:
-            print(f"计算特征重要性时发生错误: {e_imp}")
-            import traceback
-            traceback.print_exc()
+        # 计算特征重要性
+        if is_multiclass:
+            num_classes = len(shap_values)
+            for feature_idx, feature_name in enumerate(X_sample.columns):
+                values = []
+                for class_idx in range(num_classes):
+                    values.append(np.abs(shap_values[class_idx][:, feature_idx]).mean())
+                feature_importance[feature_name] = float(np.mean(values))
+        else:
+            for feature_idx, feature_name in enumerate(X_sample.columns):
+                feature_importance[feature_name] = float(np.abs(shap_values[:, feature_idx]).mean())
         
-        # 选择几个样本，创建SHAP力图
-        try:
-            # 选择前3个测试样本
-            for sample_idx in range(min(3, len(X_sample))):
-                plt.figure(figsize=(16, 7))
-                plt.title(f"样本 {sample_idx+1} 的SHAP力图")
+        # 按重要性排序
+        sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+        
+        # 为前3个最重要特征创建手动的SHAP散点图 (兼容所有SHAP版本)
+        for i, (feature_name, _) in enumerate(sorted_importance[:3]):
+            try:
+                plt.figure(figsize=(10, 7))
+                feature_idx = list(X_sample.columns).index(feature_name)
                 
-                # 使用自定义方法创建力图
-                feature_names = X_sample.columns
-                
-                # 获取该样本的特征值和SHAP值
+                # 先打印调试信息
                 if is_multiclass:
-                    # 多分类情况，选择一个类别
-                    shap_vals = shap_values[class_to_explain][sample_idx]
-                    pred_class = best_svm.predict([X_sample.iloc[sample_idx]])[0]
-                    title_suffix = f" (预测为: {pred_class}人)"
+                    feature_shap_values = shap_values[class_to_explain][:, feature_idx]
                 else:
-                    # 二分类情况
-                    shap_vals = shap_values[sample_idx]
-                    pred_class = best_svm.predict([X_sample.iloc[sample_idx]])[0]
-                    title_suffix = f" (预测为: {pred_class}人)"
+                    feature_shap_values = shap_values[:, feature_idx]
+                    
+                feature_values = X_sample.iloc[:, feature_idx].values
                 
-                # 确保SHAP值是一维数组
-                shap_vals = np.array(shap_vals).flatten()
+                print(f"特征 '{feature_name}' 的SHAP分析:")
+                print(f"  - 特征值数组形状: {feature_values.shape}")
+                print(f"  - SHAP值数组形状: {feature_shap_values.shape}")
                 
-                # 创建带有特征值标注的条形图
-                # 按SHAP值绝对大小排序
-                indices = np.argsort(np.abs(shap_vals))
-                indices = indices[-15:]  # 只显示最重要的15个特征
+                # 确保数组维度匹配
+                if len(feature_values) != len(feature_shap_values):
+                    print(f"  警告: 数组大小不匹配! 将截断到较小的尺寸")
+                    min_size = min(len(feature_values), len(feature_shap_values))
+                    feature_values = feature_values[:min_size]
+                    feature_shap_values = feature_shap_values[:min_size]
                 
-                # 获取特征名和值
-                feat_names = [feature_names[i] for i in indices]
-                feat_values = [X_sample.iloc[sample_idx, i] for i in indices]
-                shap_values_sorted = shap_vals[indices]
+                # 创建散点图
+                plt.scatter(feature_values, feature_shap_values, 
+                          c=feature_shap_values, cmap='coolwarm', 
+                          alpha=0.8, edgecolor='k', s=70)
+                plt.colorbar(label='SHAP值')
+                plt.xlabel(f'特征 "{feature_name}" 的值')
+                plt.ylabel('SHAP值 (对预测的影响)')
                 
-                # 创建标签
-                labels = [f"{name} = {value:.2f}" for name, value in zip(feat_names, feat_values)]
+                if is_multiclass:
+                    plt.title(f"特征 '{feature_name}' 的SHAP值分析 (类别 {class_to_explain})")
+                else:
+                    plt.title(f"特征 '{feature_name}' 的SHAP值分析")
                 
-                # 设置颜色
-                colors = ['red' if x > 0 else 'blue' for x in shap_values_sorted]
-                
-                # 绘制条形图
-                bars = plt.barh(range(len(labels)), shap_values_sorted, color=colors)
-                plt.yticks(range(len(labels)), labels)
-                plt.axvline(x=0, color='black', linestyle='--', alpha=0.6)
-                plt.xlabel('SHAP值 (特征对预测的影响)')
-                plt.title(f"样本 {sample_idx+1} 的SHAP力图" + title_suffix)
-                plt.grid(axis='x', linestyle='--', alpha=0.3)
-                plt.tight_layout()
-                
-                force_plot_path = os.path.join(PLOTS_DIR, f'svm_shap_force_sample_{sample_idx+1}_v2.91.png')
-                plt.savefig(force_plot_path)
+                plt.grid(True, alpha=0.3)
+                scatter_path = os.path.join(PLOTS_DIR, f'svm_shap_scatter_{feature_name}_v2.91.png')
+                plt.savefig(scatter_path)
                 plt.close()
-                print(f"样本 {sample_idx+1} 的SHAP力图已保存至: {force_plot_path}")
+                print(f"特征 '{feature_name}' 的SHAP散点图已保存至: {scatter_path}")
+                
+                # 创建依赖图 (替代方案，不使用shap库的方法)
+                plt.figure(figsize=(10, 7))
+                
+                # 计算滑动平均来平滑趋势
+                def sliding_window_average(x, y, window=10):
+                    # 按x排序
+                    sorted_indices = np.argsort(x)
+                    x_sorted = x[sorted_indices]
+                    y_sorted = y[sorted_indices]
+                    
+                    # 计算滑动平均
+                    x_smooth = []
+                    y_smooth = []
+                    
+                    for i in range(len(x_sorted) - window + 1):
+                        x_smooth.append(np.mean(x_sorted[i:i+window]))
+                        y_smooth.append(np.mean(y_sorted[i:i+window]))
+                    
+                    return np.array(x_smooth), np.array(y_smooth)
+                
+                # 绘制散点图和趋势线
+                plt.scatter(feature_values, feature_shap_values, alpha=0.5, label='SHAP值')
+                
+                # 如果有足够的点，则添加平滑趋势线
+                if len(feature_values) >= 10:
+                    try:
+                        window_size = max(5, len(feature_values) // 10)  # 自适应窗口大小
+                        x_smooth, y_smooth = sliding_window_average(
+                            feature_values, feature_shap_values, window=window_size)
+                        plt.plot(x_smooth, y_smooth, 'r-', linewidth=2, label='趋势线(滑动平均)')
+                    except Exception as e_trend:
+                        print(f"  创建趋势线时出错: {e_trend}")
+                        # 简单线性回归作为备选
+                        try:
+                            from scipy.stats import linregress
+                            slope, intercept, _, _, _ = linregress(feature_values, feature_shap_values)
+                            x_trend = np.linspace(min(feature_values), max(feature_values), 100)
+                            y_trend = slope * x_trend + intercept
+                            plt.plot(x_trend, y_trend, 'r--', linewidth=2, label='线性趋势线')
+                        except Exception as e_lin:
+                            print(f"  创建线性趋势线也失败: {e_lin}")
+                
+                plt.axhline(y=0, color='gray', linestyle='--', alpha=0.5)  # 添加y=0的参考线
+                plt.xlabel(f'特征 "{feature_name}" 的值')
+                plt.ylabel('SHAP值 (对预测的影响)')
+                
+                if is_multiclass:
+                    plt.title(f"特征 '{feature_name}' 的SHAP依赖分析 (类别 {class_to_explain})")
+                else:
+                    plt.title(f"特征 '{feature_name}' 的SHAP依赖分析")
+                
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                dependency_path = os.path.join(PLOTS_DIR, f'svm_shap_dependency_{feature_name}_v2.91.png')
+                plt.savefig(dependency_path)
+                plt.close()
+                print(f"特征 '{feature_name}' 的SHAP依赖图已保存至: {dependency_path}")
+                
+            except Exception as e_feat:
+                print(f"处理特征 '{feature_name}' 时发生错误: {e_feat}")
+                import traceback
+                traceback.print_exc()
         
-        except Exception as e_force:
-            print(f"创建SHAP力图时发生错误: {e_force}")
-            import traceback
-            traceback.print_exc()
-    
+        # --- 部分依赖图 (PDP) ---
+        print("\n计算部分依赖图 (PDP)...")
+        tic = time.time()
+        
+        # 获取前5个最重要特征
+        top_features = [name for name, _ in sorted_importance[:5]]
+        print(f"为最重要的5个特征生成PDP: {top_features}")
+        
+        # 检查是否是多分类问题
+        if is_multiclass:
+            # 多分类问题，需要指定目标类别
+            num_classes = len(np.unique(y_train))
+            print(f"检测到多分类问题，共有 {num_classes} 个类别")
+            
+            # 为多分类问题中的第一个类别生成PDP
+            target_class = 0  # 默认第一个类别
+            print(f"生成类别 {target_class} 的PDP图")
+            
+            # 为所有特征创建PDP组合图
+            try:
+                disp = PartialDependenceDisplay.from_estimator(
+                    estimator=best_svm,
+                    X=X_train,
+                    features=top_features,
+                    target=target_class,  # 指定目标类别
+                    kind="average",
+                    grid_resolution=50,
+                    subsample=200,
+                    n_jobs=-1,  # 使用所有CPU核心
+                    random_state=42
+                )
+                
+                # 调整图形
+                plt.suptitle(f"SVM模型 - 类别 {target_class} 的主要特征部分依赖图 (PDP)", fontsize=16)
+                plt.subplots_adjust(hspace=0.3, wspace=0.3)
+                
+                # 动态调整每个子图的y轴范围
+                for ax in disp.axes_.ravel():
+                    if ax is None:  # 如果子图为空，跳过处理
+                        continue
+                        
+                    # 检查子图是否有曲线
+                    if ax.get_lines():
+                        y_data = ax.get_lines()[0].get_ydata()
+                        if len(y_data) > 0:  # 确保有数据
+                            y_min, y_max = y_data.min(), y_data.max()
+                            # 在实际范围上下扩展10%
+                            ax.set_ylim(y_min - 0.1 * (y_max - y_min), y_max + 0.1 * (y_max - y_min))
+                            
+                    # 设置刻度和标签
+                    ax.tick_params(axis='both', which='major', labelsize=10)
+                
+                pdp_all_path = os.path.join(PLOTS_DIR, f'svm_pdp_all_features_class_{target_class}_v2.91.png')
+                plt.savefig(pdp_all_path, dpi=300, bbox_inches="tight")
+                plt.close()
+                print(f"所有特征的PDP图（类别 {target_class}）已保存至: {pdp_all_path}")
+                
+                # 为每个重要特征单独创建PDP
+                for feature in top_features:
+                    plt.figure(figsize=(8, 6))
+                    try:
+                        PartialDependenceDisplay.from_estimator(
+                            estimator=best_svm,
+                            X=X_train,
+                            features=[feature],
+                            target=target_class,  # 指定目标类别
+                            kind="both",  # 同时显示PDP和ICE
+                            grid_resolution=100,
+                            subsample=50,
+                            n_jobs=-1,
+                            random_state=42
+                        )
+                        plt.title(f"特征 '{feature}' 的部分依赖图（类别 {target_class}）")
+                        plt.grid(True, alpha=0.3)
+                        plt.tight_layout()
+                        
+                        pdp_single_path = os.path.join(PLOTS_DIR, f'svm_pdp_feature_{feature}_class_{target_class}_v2.91.png')
+                        plt.savefig(pdp_single_path, dpi=300, bbox_inches="tight")
+                        plt.close()
+                        print(f"特征 '{feature}' 的单独PDP图（类别 {target_class}）已保存至: {pdp_single_path}")
+                    except Exception as e_pdp_single:
+                        print(f"为特征 '{feature}' 创建单独PDP图时发生错误: {e_pdp_single}")
+                        plt.close()
+                
+                # 创建2D PDP (特征交互)
+                # 选择前3个最重要特征中的2个特征组合
+                if len(top_features) >= 2:
+                    feature_pairs = list(product(top_features[:2], top_features[2:3] if len(top_features) > 2 else top_features[:1]))
+                    print(f"生成 {len(feature_pairs)} 个特征对的2D PDP图...")
+                    
+                    for i, feature_pair in enumerate(feature_pairs):
+                        print(f"绘制特征对 {feature_pair} 的2D PDP图（类别 {target_class}）...")
+                        try:
+                            # 绘制2D PDP图
+                            display = PartialDependenceDisplay.from_estimator(
+                                estimator=best_svm,
+                                X=X_train,
+                                features=[feature_pair],  # 当前特征对
+                                target=target_class,  # 指定目标类别
+                                kind="average",
+                                grid_resolution=30,
+                                n_jobs=-1
+                            )
+                            
+                            # 设置标题
+                            plt.suptitle(f"特征 '{feature_pair[0]}' 和 '{feature_pair[1]}' 的2D部分依赖图（类别 {target_class}）", fontsize=14)
+                            plt.tight_layout()
+                            
+                            # 保存图像
+                            pdp_2d_path = os.path.join(PLOTS_DIR, f'svm_pdp_2d_{feature_pair[0]}_{feature_pair[1]}_class_{target_class}_v2.91.png')
+                            plt.savefig(pdp_2d_path, dpi=300, bbox_inches="tight")
+                            plt.close()
+                            print(f"2D PDP图已保存至: {pdp_2d_path}")
+                        except Exception as e_pdp_2d:
+                            print(f"创建2D PDP图时发生错误: {e_pdp_2d}")
+                            plt.close()
+            except Exception as e_pdp_all:
+                print(f"创建所有特征的PDP图时发生错误: {e_pdp_all}")
+                import traceback
+                traceback.print_exc()
+        else:
+            # 二分类或回归问题，不需要指定目标类别
+            try:
+                # 为所有特征创建PDP组合图
+                disp = PartialDependenceDisplay.from_estimator(
+                    estimator=best_svm,
+                    X=X_train,
+                    features=top_features,
+                    kind="average",
+                    grid_resolution=50,
+                    subsample=200,
+                    n_jobs=-1,  # 使用所有CPU核心
+                    random_state=42
+                )
+                
+                # 调整图形
+                plt.suptitle("SVM模型 - 主要特征的部分依赖图 (PDP)", fontsize=16)
+                plt.subplots_adjust(hspace=0.3, wspace=0.3)
+                
+                # 动态调整每个子图的y轴范围
+                for ax in disp.axes_.ravel():
+                    if ax is None:  # 如果子图为空，跳过处理
+                        continue
+                        
+                    # 检查子图是否有曲线
+                    if ax.get_lines():
+                        y_data = ax.get_lines()[0].get_ydata()
+                        if len(y_data) > 0:  # 确保有数据
+                            y_min, y_max = y_data.min(), y_data.max()
+                            # 在实际范围上下扩展10%
+                            ax.set_ylim(y_min - 0.1 * (y_max - y_min), y_max + 0.1 * (y_max - y_min))
+                            
+                    # 设置刻度和标签
+                    ax.tick_params(axis='both', which='major', labelsize=10)
+                
+                pdp_all_path = os.path.join(PLOTS_DIR, 'svm_pdp_all_features_v2.91.png')
+                plt.savefig(pdp_all_path, dpi=300, bbox_inches="tight")
+                plt.close()
+                print(f"所有特征的PDP图已保存至: {pdp_all_path}")
+                
+                # 为每个重要特征单独创建PDP
+                for feature in top_features:
+                    plt.figure(figsize=(8, 6))
+                    PartialDependenceDisplay.from_estimator(
+                        estimator=best_svm,
+                        X=X_train,
+                        features=[feature],
+                        kind="both",  # 同时显示PDP和ICE
+                        grid_resolution=100,
+                        subsample=50,
+                        n_jobs=-1,
+                        random_state=42
+                    )
+                    plt.title(f"特征 '{feature}' 的部分依赖图")
+                    plt.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    
+                    pdp_single_path = os.path.join(PLOTS_DIR, f'svm_pdp_feature_{feature}_v2.91.png')
+                    plt.savefig(pdp_single_path, dpi=300, bbox_inches="tight")
+                    plt.close()
+                    print(f"特征 '{feature}' 的单独PDP图已保存至: {pdp_single_path}")
+                
+                # 创建2D PDP (特征交互)
+                # 选择前3个最重要特征中的2个特征组合
+                if len(top_features) >= 2:
+                    feature_pairs = list(product(top_features[:2], top_features[2:3] if len(top_features) > 2 else top_features[:1]))
+                    print(f"生成 {len(feature_pairs)} 个特征对的2D PDP图...")
+                    
+                    for i, feature_pair in enumerate(feature_pairs):
+                        print(f"绘制特征对 {feature_pair} 的2D PDP图...")
+                        
+                        # 绘制2D PDP图
+                        display = PartialDependenceDisplay.from_estimator(
+                            estimator=best_svm,
+                            X=X_train,
+                            features=[feature_pair],  # 当前特征对
+                            kind="average",
+                            grid_resolution=30,
+                            n_jobs=-1
+                        )
+                        
+                        # 设置标题
+                        plt.suptitle(f"特征 '{feature_pair[0]}' 和 '{feature_pair[1]}' 的2D部分依赖图", fontsize=14)
+                        plt.tight_layout()
+                        
+                        # 保存图像
+                        pdp_2d_path = os.path.join(PLOTS_DIR, f'svm_pdp_2d_{feature_pair[0]}_{feature_pair[1]}_v2.91.png')
+                        plt.savefig(pdp_2d_path, dpi=300, bbox_inches="tight")
+                        plt.close()
+                        print(f"2D PDP图已保存至: {pdp_2d_path}")
+            except Exception as e_pdp:
+                print(f"创建PDP图时发生错误: {e_pdp}")
+                import traceback
+                traceback.print_exc()
+        
+        # 可视化实际值与预测值的对比
+        plt.figure(figsize=(8, 6))
+        y_pred = best_svm.predict(X_test)
+        
+        plt.scatter(y_test, y_pred, alpha=0.6, edgecolors='k', label="预测值 vs 实际值")
+        
+        # 添加理想拟合线
+        y_min, y_max = min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())
+        plt.plot([y_min, y_max], [y_min, y_max], 'r--', lw=2, label="理想拟合线")
+        
+        plt.xlabel("实际值")
+        plt.ylabel("预测值")
+        plt.title("SVM模型 - 实际值与预测值对比")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        actual_vs_pred_path = os.path.join(PLOTS_DIR, 'svm_actual_vs_pred_v2.91.png')
+        plt.savefig(actual_vs_pred_path, dpi=300, bbox_inches="tight")
+        plt.close()
+        print(f"实际值与预测值对比图已保存至: {actual_vs_pred_path}")
+        
+        toc = time.time()
+        print(f"所有分析和可视化完成，耗时: {toc - tic:.2f} 秒")
+        
     else:
-        print("未找到SVM模型或测试数据，无法计算SHAP值")
+        print("未找到SVM模型或必要数据，无法进行SHAP和PDP分析")
 
-except ImportError:
-    print("未安装SHAP库，无法进行SHAP分析。请运行 'pip install shap' 安装")
-except Exception as e_shap:
-    print(f"SHAP分析过程中发生错误: {e_shap}")
+except ImportError as e:
+    print(f"缺少必要的库: {e}")
+    print("请运行以下命令安装所需库: pip install shap matplotlib scikit-learn")
+except Exception as e:
+    print(f"分析过程中发生错误: {e}")
     import traceback
     traceback.print_exc()
 
-print("--- 支持向量机SHAP分析完成 ---")
+print("--- 增强型SVM模型分析完成 ---")
 print(f"\n脚本 {os.path.basename(__file__)} (版本 2.9) 执行完毕。")
