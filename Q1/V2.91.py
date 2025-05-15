@@ -394,77 +394,600 @@ if not df_processed_peaks.empty:
 print("--- 步骤 2 完成 ---")
 
 # --- 步骤 3: 特征工程 (版本 2.9) ---
-print(f"\n--- 步骤 3: 特征工程 (版本 2.9) ---")
-df_features_v2_9 = pd.DataFrame() # MODIFIED: DataFrame name
+# --- 步骤 3: 特征工程 (增强版) ---
+print(f"\n--- 步骤 3: 特征工程 (增强版 - 基于综合特征方案) ---")
+from scipy import stats
+from scipy.signal import find_peaks
+from collections import Counter
+import warnings
+df_features_enhanced = pd.DataFrame()
 
 try:
     print(f"用于筛选真实等位基因的置信度阈值 (TRUE_ALLELE_CONFIDENCE_THRESHOLD): {TRUE_ALLELE_CONFIDENCE_THRESHOLD}")
+    
+    # 初始验证
     if not df_processed_peaks.empty and 'CTA' in df_processed_peaks.columns and \
        'Sample File' in df_processed_peaks.columns and 'Marker' in df_processed_peaks.columns and \
-       'Allele' in df_processed_peaks.columns and 'Height' in df_processed_peaks.columns:
+       'Allele' in df_processed_peaks.columns and 'Height' in df_processed_peaks.columns and \
+       'Size' in df_processed_peaks.columns:
+        
         df_processed_peaks['Is_Effective_Allele'] = df_processed_peaks['CTA'] >= TRUE_ALLELE_CONFIDENCE_THRESHOLD
         df_effective_alleles = df_processed_peaks[df_processed_peaks['Is_Effective_Allele']]
-        if df_effective_alleles.empty: print("警告: 应用CTA阈值后，没有剩余有效等位基因。特征将主要为0或NaN。")
+        
+        if df_effective_alleles.empty: 
+            print("警告: 应用CTA阈值后，没有剩余有效等位基因。特征将主要为0或NaN。")
     else:
         print("警告: df_processed_peaks 为空或缺少必要列，无法进行有效等位基因筛选。")
-        cols_for_empty_effective = ['Allele', 'Marker', 'Height', 'Sample File', 'Is_Effective_Allele']
+        cols_for_empty_effective = ['Allele', 'Marker', 'Height', 'Sample File', 'Is_Effective_Allele', 'Size']
         base_cols = ['Allele', 'Allele_Numeric', 'Size', 'Height', 'Original_Height', 'CTA', 'Is_Stutter_Suspect', 'Stutter_Score_N_Minus_1', 'Sample File', 'Marker']
-        available_cols = [col for col in base_cols if col in df_processed_peaks.columns] if not df_processed_peaks.empty else ['Allele', 'Marker', 'Height', 'Sample File']
+        available_cols = [col for col in base_cols if col in df_processed_peaks.columns] if not df_processed_peaks.empty else ['Allele', 'Marker', 'Height', 'Sample File', 'Size']
         df_effective_alleles = pd.DataFrame(columns= available_cols + ['Is_Effective_Allele'])
 
+    # 创建特征数据框架（包含所有样本和真实NoC）
     all_sample_files_index_df = df_prob1[['Sample File', 'NoC_True']].drop_duplicates().set_index('Sample File')
-    df_features_v2_9 = pd.DataFrame(index=all_sample_files_index_df.index)
-    df_features_v2_9['NoC_True'] = all_sample_files_index_df['NoC_True']
+    df_features_enhanced = pd.DataFrame(index=all_sample_files_index_df.index)
+    df_features_enhanced['NoC_True'] = all_sample_files_index_df['NoC_True']
+    
+    # 如果没有有效等位基因，直接返回基本特征
+    if df_effective_alleles.empty:
+        print("警告: 无有效等位基因，仅生成空特征向量。")
+        df_features_enhanced = df_features_enhanced.reset_index()
+        df_features_enhanced['max_allele_per_sample'] = 0
+        df_features_enhanced['total_distinct_alleles'] = B0
+        df_features_enhanced['avg_alleles_per_locus'] = 0
+        df_features_enhanced['std_alleles_per_locus'] = 0
 
-    feature_cols_to_init = [
-        'max_allele_per_sample', 'total_alleles_per_sample', 'avg_alleles_per_marker',
-        'markers_gt2_alleles', 'markers_gt3_alleles', 'markers_gt4_alleles',
-        'avg_peak_height', 'std_peak_height'
-    ]
-    for col in feature_cols_to_init:
-        df_features_v2_9[col] = 0.0
-
-    if not df_effective_alleles.empty and \
-       'Sample File' in df_effective_alleles.columns and \
-       'Marker' in df_effective_alleles.columns and \
-       'Allele' in df_effective_alleles.columns:
-        
+    else:
+        # 计算每个样本、每个位点有效等位基因的数量
         n_eff_alleles_per_locus = df_effective_alleles.groupby(['Sample File', 'Marker'])['Allele'].nunique().rename('N_eff_alleles')
-        grouped_by_sample_eff = n_eff_alleles_per_locus.groupby('Sample File')
-
-        df_features_v2_9['max_allele_per_sample'] = grouped_by_sample_eff.max().reindex(df_features_v2_9.index)
-        df_features_v2_9['total_alleles_per_sample'] = grouped_by_sample_eff.sum().reindex(df_features_v2_9.index)
-        df_features_v2_9['avg_alleles_per_marker'] = grouped_by_sample_eff.mean().reindex(df_features_v2_9.index)
-        df_features_v2_9['markers_gt2_alleles'] = grouped_by_sample_eff.apply(lambda x: (x > 2).sum()).reindex(df_features_v2_9.index)
-        df_features_v2_9['markers_gt3_alleles'] = grouped_by_sample_eff.apply(lambda x: (x > 3).sum()).reindex(df_features_v2_9.index)
-        df_features_v2_9['markers_gt4_alleles'] = grouped_by_sample_eff.apply(lambda x: (x > 4).sum()).reindex(df_features_v2_9.index)
+        n_eff_alleles_per_locus_df = n_eff_alleles_per_locus.reset_index()
         
-        if 'Height' in df_effective_alleles.columns:
-            grouped_heights_eff = df_effective_alleles.groupby('Sample File')['Height']
-            df_features_v2_9['avg_peak_height'] = grouped_heights_eff.mean().reindex(df_features_v2_9.index)
-            df_features_v2_9['std_peak_height'] = grouped_heights_eff.std().reindex(df_features_v2_9.index)
-        else:
-            print("警告: df_effective_alleles 缺少 'Height' 列，峰高相关特征无法计算。")
+        # 每个样本的有效位点列表 (至少有一个有效等位基因的位点)
+        effective_loci_by_sample = df_effective_alleles.groupby('Sample File')['Marker'].unique()
+        
+        # 获取所有预期的常染色体位点（从位点参数中）
+        expected_autosomal_loci = []
+        for marker, params in MARKER_PARAMS.items():
+            is_autosomal = True  # 默认为常染色体
+            # 如果JSON中有指定，则使用指定值
+            if 'is_autosomal' in params:
+                is_autosomal = params['is_autosomal']
+            if is_autosomal:
+                expected_autosomal_loci.append(marker)
+        expected_autosomal_count = len(expected_autosomal_loci)
+        
+        # 为特征计算准备样本级别的数据结构
+        sample_features = {}
+        
+        for sample_file, sample_group in df_effective_alleles.groupby('Sample File'):
+            # 获取该样本的所有有效等位基因（所有位点）
+            all_effective_alleles = []
+            allele_heights = []
+            allele_sizes = []
+            
+            # 位点级别统计信息
+            locus_allele_counts = {}  # 每个位点的等位基因数量
+            locus_peak_heights = {}   # 每个位点的峰高总和
+            locus_allele_details = {} # 每个位点的详细等位基因信息
+            
+            # 处理样本中的每个位点
+            for marker, marker_group in sample_group.groupby('Marker'):
+                alleles = marker_group['Allele'].unique().tolist()
+                heights = marker_group['Height'].values
+                sizes = marker_group['Size'].values
+                
+                # 保存有效等位基因详情
+                locus_allele_counts[marker] = len(alleles)
+                locus_peak_heights[marker] = sum(heights)
+                locus_allele_details[marker] = []
+                
+                for _, allele_row in marker_group.iterrows():
+                    all_effective_alleles.append(allele_row['Allele'])
+                    allele_heights.append(allele_row['Height'])
+                    allele_sizes.append(allele_row['Size'])
+                    
+                    locus_allele_details[marker].append({
+                        'allele': allele_row['Allele'],
+                        'height': allele_row['Height'],
+                        'size': allele_row['Size']
+                    })
+            
+            # 确定有效位点（至少有一个有效等位基因的位点）
+            effective_loci = list(locus_allele_counts.keys())
+            num_effective_loci = len(effective_loci)
+            
+            # 峰高与峰大小数据
+            all_heights = np.array(allele_heights)
+            all_sizes = np.array(allele_sizes)
+            
+            # 初始化样本特征
+            sample_data = {
+                'all_effective_alleles': all_effective_alleles,
+                'allele_heights': all_heights,
+                'allele_sizes': all_sizes,
+                'locus_allele_counts': locus_allele_counts,
+                'locus_peak_heights': locus_peak_heights,
+                'locus_allele_details': locus_allele_details,
+                'effective_loci': effective_loci,
+                'num_effective_loci': num_effective_loci,
+                'expected_autosomal_count': expected_autosomal_count,
+                'expected_autosomal_loci': expected_autosomal_loci,
+            }
+            
+            sample_features[sample_file] = sample_data
+        
+        # 遍历每个样本计算特征
+        features_dict = {}
+        
+        for sample_file, sample_data in sample_features.items():
+            # 样本特征字典
+            features = {}
+            
+            # A. 图谱层面基础计数与统计特征
+            # A.1. MACP (Maximum Allele Count per Profile / 样本最大等位基因数)
+            if sample_data['locus_allele_counts']:
+                features['mac_profile'] = max(sample_data['locus_allele_counts'].values())
+            else:
+                features['mac_profile'] = 0
+            
+            # A.2. TDA (Total Distinct Alleles in Profile / 样本总特异等位基因数)
+            features['total_distinct_alleles'] = len(set(sample_data['all_effective_alleles']))
+            
+            # 对所有预期的常染色体位点，获取每个位点的等位基因数量（缺失位点为0）
+            allele_counts_by_locus = []
+            for locus in sample_data['expected_autosomal_loci']:
+                count = sample_data['locus_allele_counts'].get(locus, 0)
+                allele_counts_by_locus.append(count)
+            
+            allele_counts_array = np.array(allele_counts_by_locus)
+            
+            # A.3. AAP (Average Alleles per Locus / 每位点平均等位基因数)
+            if len(allele_counts_by_locus) > 0:
+                features['avg_alleles_per_locus'] = np.mean(allele_counts_array)
+            else:
+                features['avg_alleles_per_locus'] = 0
+            
+            # A.4. SDA (Standard Deviation of Alleles per Locus / 每位点等位基因数的标准差)
+            if len(allele_counts_by_locus) > 1:
+                features['std_alleles_per_locus'] = np.std(allele_counts_array, ddof=1)
+            else:
+                features['std_alleles_per_locus'] = 0
+            
+            # A.5. MGTN 系列 (等位基因数大于等于 N 的位点数)
+            for n in [2, 3, 4, 5, 6]:
+                features[f'loci_gt{n}_alleles'] = np.sum(allele_counts_array >= n)
+            
+            # A.6. Entropy of Allele Counts per Locus
+            if len(allele_counts_by_locus) > 0 and np.sum(allele_counts_array) > 0:
+                # 计算等位基因数计数的分布
+                count_values, count_freqs = np.unique(allele_counts_array, return_counts=True)
+                probs = count_freqs / np.sum(count_freqs)
+                entropy = -np.sum(probs * np.log(probs + 1e-10))  # 避免log(0)
+                features['allele_count_dist_entropy'] = entropy
+            else:
+                features['allele_count_dist_entropy'] = 0
+            
+            # B. 峰高、平衡性与随机效应相关特征
+            # B.1. 平均峰高和峰高标准差
+            if len(sample_data['allele_heights']) > 0:
+                features['avg_peak_height'] = np.mean(sample_data['allele_heights'])
+                if len(sample_data['allele_heights']) > 1:
+                    features['std_peak_height'] = np.std(sample_data['allele_heights'], ddof=1)
+                else:
+                    features['std_peak_height'] = 0
+            else:
+                features['avg_peak_height'] = 0
+                features['std_peak_height'] = 0
+            
+            # B.2. 峰高比 (PHR) 相关统计量
+            phr_values = []
+            
+            for locus, alleles in sample_data['locus_allele_details'].items():
+                # 仅考虑有恰好两个等位基因的位点
+                if len(alleles) == 2:
+                    h1 = alleles[0]['height']
+                    h2 = alleles[1]['height']
+                    if max(h1, h2) > 0:
+                        phr = min(h1, h2) / max(h1, h2)
+                        phr_values.append(phr)
+            
+            if phr_values:
+                features['avg_phr'] = np.mean(phr_values)
+                if len(phr_values) > 1:
+                    features['std_phr'] = np.std(phr_values, ddof=1)
+                else:
+                    features['std_phr'] = 0
+                features['min_phr'] = np.min(phr_values)
+                features['median_phr'] = np.median(phr_values)
+                features['num_loci_with_phr'] = len(phr_values)
+                
+                # 严重不平衡位点数量
+                imbalance_threshold = 0.6  # 可以从配置读取
+                num_severe_imbalance = sum(phr <= imbalance_threshold for phr in phr_values)
+                features['num_severe_imbalance_loci'] = num_severe_imbalance
+                if len(phr_values) > 0:
+                    features['ratio_severe_imbalance_loci'] = num_severe_imbalance / len(phr_values)
+                else:
+                    features['ratio_severe_imbalance_loci'] = 0
+            else:
+                features['avg_phr'] = 0
+                features['std_phr'] = 0
+                features['min_phr'] = 0
+                features['median_phr'] = 0
+                features['num_loci_with_phr'] = 0
+                features['num_severe_imbalance_loci'] = 0
+                features['ratio_severe_imbalance_loci'] = 0
+            
+            # B.3. 峰高分布的偏度和峭度
+            if len(sample_data['allele_heights']) > 2:
+                features['skewness_peak_height'] = stats.skew(sample_data['allele_heights'], bias=False)
+                features['kurtosis_peak_height'] = stats.kurtosis(sample_data['allele_heights'], fisher=False, bias=False)
+            else:
+                features['skewness_peak_height'] = 0
+                features['kurtosis_peak_height'] = 0
+            
+            # B.3+ 峰高分布的多峰性指标
+            if len(sample_data['allele_heights']) > 0:
+                try:
+                    # 对数变换峰高，可能有助于更好地识别多峰性
+                    log_heights = np.log(sample_data['allele_heights'] + 1)
+                    
+                    # 使用KDE或直方图寻找局部最大值
+                    if len(np.unique(log_heights)) > 1:
+                        # 获取直方图
+                        hist, bin_edges = np.histogram(log_heights, bins='auto')
+                        # 在直方图上寻找峰
+                        peaks, _ = find_peaks(hist)
+                        features['modality_peak_height'] = len(peaks)
+                    else:
+                        # 如果所有值都相同
+                        features['modality_peak_height'] = 1 if len(log_heights) > 0 else 0
+                except Exception as e_modality:
+                    # 出错时默认为1
+                    features['modality_peak_height'] = 1
+                    print(f"计算多峰性指标时出错: {e_modality}")
+            else:
+                features['modality_peak_height'] = 0
+            
+            # B.4. 饱和效应指示特征
+            sat_threshold = SATURATION_THRESHOLD  # 饱和阈值
+            num_saturated_peaks = np.sum(sample_data['allele_heights'] >= sat_threshold)
+            features['num_saturated_peaks'] = num_saturated_peaks
+            if len(sample_data['allele_heights']) > 0:
+                features['ratio_saturated_peaks'] = num_saturated_peaks / len(sample_data['allele_heights'])
+            else:
+                features['ratio_saturated_peaks'] = 0
+            
+            # C. 信息论与图谱复杂度/完整性特征
+            # C.1. 位点间平衡性的香农熵
+            total_height = sum(sample_data['locus_peak_heights'].values())
+            if total_height > 0:
+                locus_probs = [h/total_height for h in sample_data['locus_peak_heights'].values() if h > 0]
+                if locus_probs:
+                    features['inter_locus_balance_entropy'] = -np.sum(p * np.log(p) for p in locus_probs)
+                else:
+                    features['inter_locus_balance_entropy'] = 0
+            else:
+                features['inter_locus_balance_entropy'] = 0
+            
+            # C.2. 平均位点等位基因分布熵
+            locus_entropies = []
+            for locus, alleles in sample_data['locus_allele_details'].items():
+                locus_height_sum = sum(a['height'] for a in alleles)
+                if locus_height_sum > 0:
+                    probs = [a['height'] / locus_height_sum for a in alleles]
+                    entropy = -np.sum(p * np.log(p) for p in probs)
+                    locus_entropies.append(entropy)
+            
+            if locus_entropies:
+                features['avg_locus_allele_entropy'] = np.mean(locus_entropies)
+            else:
+                features['avg_locus_allele_entropy'] = 0
+            
+            # C.3. 样本整体峰高分布熵
+            if len(sample_data['allele_heights']) > 0:
+                # 对数变换后分箱
+                log_heights = np.log(sample_data['allele_heights'] + 1)
+                hist, _ = np.histogram(log_heights, bins=15)  # 15个箱子
+                hist_probs = hist / np.sum(hist)
+                hist_probs = hist_probs[hist_probs > 0]  # 移除零概率
+                if len(hist_probs) > 0:
+                    features['peak_height_entropy'] = -np.sum(p * np.log(p) for p in hist_probs)
+                else:
+                    features['peak_height_entropy'] = 0
+            else:
+                features['peak_height_entropy'] = 0
+            
+            # C.4. 图谱完整性指标
+            features['num_loci_with_effective_alleles'] = sample_data['num_effective_loci']
+            features['num_loci_no_effective_alleles'] = sample_data['expected_autosomal_count'] - sample_data['num_effective_loci']
+            
+            # D. DNA降解与信息丢失量化指标
+            # D.1. 峰高与片段大小的相关性
+            if len(sample_data['allele_heights']) > 1 and len(np.unique(sample_data['allele_heights'])) > 1 and len(np.unique(sample_data['allele_sizes'])) > 1:
+                features['height_size_correlation'] = np.corrcoef(sample_data['allele_sizes'], sample_data['allele_heights'])[0, 1]
+            else:
+                features['height_size_correlation'] = 0
+            
+            # D.2. 峰高与片段大小的线性回归斜率
+            if len(sample_data['allele_heights']) > 1 and len(np.unique(sample_data['allele_heights'])) > 1 and len(np.unique(sample_data['allele_sizes'])) > 1:
+                try:
+                    slope, _, _, _, _ = stats.linregress(sample_data['allele_sizes'], sample_data['allele_heights'])
+                    features['height_size_slope'] = slope
+                except:
+                    features['height_size_slope'] = 0
+            else:
+                features['height_size_slope'] = 0
+            
+            # D.3. 加权峰高与片段大小的线性回归斜率 (WLS回归)
+            if len(sample_data['allele_heights']) > 1 and len(np.unique(sample_data['allele_heights'])) > 1 and len(np.unique(sample_data['allele_sizes'])) > 1:
+                try:
+                    # 使用峰高作为权重
+                    weights = sample_data['allele_heights']
+                    
+                    # 手动计算加权最小二乘回归
+                    x = sample_data['allele_sizes']
+                    y = sample_data['allele_heights']
+                    w = weights
+                    
+                    sum_w = np.sum(w)
+                    sum_wx = np.sum(w * x)
+                    sum_wy = np.sum(w * y)
+                    sum_wxy = np.sum(w * x * y)
+                    sum_wx2 = np.sum(w * x**2)
+                    
+                    denominator = sum_w * sum_wx2 - sum_wx**2
+                    if denominator != 0:
+                        weighted_slope = (sum_w * sum_wxy - sum_wx * sum_wy) / denominator
+                    else:
+                        weighted_slope = 0
+                    
+                    features['weighted_height_size_slope'] = weighted_slope
+                except:
+                    features['weighted_height_size_slope'] = 0
+            else:
+                features['weighted_height_size_slope'] = 0
+            
+            # D.4. PHR随扩增子片段大小变化的斜率
+            if len(phr_values) > 1:
+                try:
+                    # 获取有PHR值的位点及其平均片段大小
+                    phr_loci = []
+                    phr_sizes = []
+                    
+                    for locus, alleles in sample_data['locus_allele_details'].items():
+                        if len(alleles) == 2:
+                            h1 = alleles[0]['height']
+                            h2 = alleles[1]['height']
+                            if max(h1, h2) > 0:
+                                # 获取该位点的平均片段大小
+                                avg_size = np.mean([alleles[0]['size'], alleles[1]['size']])
+                                phr = min(h1, h2) / max(h1, h2)
+                                phr_loci.append(locus)
+                                phr_sizes.append(avg_size)
+                    
+                    # 计算PHR与片段大小的回归
+                    if len(phr_values) > 1 and len(phr_sizes) > 1:
+                        slope, _, _, _, _ = stats.linregress(phr_sizes, phr_values)
+                        features['phr_size_slope'] = slope
+                    else:
+                        features['phr_size_slope'] = 0
+                except:
+                    features['phr_size_slope'] = 0
+            else:
+                features['phr_size_slope'] = 0
+            
+            # D.5. 按片段大小加权的位点丢失评分
+            try:
+                # 获取每个位点的片段大小
+                locus_sizes = {}
+                for marker, params in MARKER_PARAMS.items():
+                    if 'avg_size_bp' in params:
+                        locus_sizes[marker] = params['avg_size_bp']
+                
+                # 计算丢失位点评分
+                dropout_score = 0
+                size_sum = 0
+                
+                for locus in sample_data['expected_autosomal_loci']:
+                    if locus in locus_sizes:
+                        size = locus_sizes[locus]
+                        is_dropout = locus not in sample_data['effective_loci']
+                        dropout_score += is_dropout * size
+                        size_sum += size
+                
+                if size_sum > 0:
+                    features['locus_dropout_score_weighted_by_size'] = dropout_score / size_sum
+                else:
+                    features['locus_dropout_score_weighted_by_size'] = 0
+            except:
+                features['locus_dropout_score_weighted_by_size'] = 0
+            
+            # D.6. RFU每碱基对衰减指数
+            try:
+                # 获取每个位点的最高峰和平均片段大小
+                locus_max_heights = []
+                locus_avg_sizes = []
+                
+                for locus in sample_data['effective_loci']:
+                    if locus in sample_data['locus_allele_details'] and locus in MARKER_PARAMS and 'avg_size_bp' in MARKER_PARAMS[locus]:
+                        max_height = max(a['height'] for a in sample_data['locus_allele_details'][locus])
+                        avg_size = MARKER_PARAMS[locus]['avg_size_bp']
+                        locus_max_heights.append(max_height)
+                        locus_avg_sizes.append(avg_size)
+                
+                # 计算最高峰与位点平均片段大小的回归
+                if len(locus_max_heights) > 1 and len(locus_avg_sizes) > 1:
+                    slope, _, _, _, _ = stats.linregress(locus_avg_sizes, locus_max_heights)
+                    features['degradation_index_rfu_per_bp'] = slope
+                else:
+                    features['degradation_index_rfu_per_bp'] = 0
+            except:
+                features['degradation_index_rfu_per_bp'] = 0
+            
+            # D.7. 小片段与大片段区域的信息完整度比率
+            try:
+                # 根据marker参数划分小片段和大片段位点
+                small_loci = []
+                large_loci = []
+                
+                for marker, params in MARKER_PARAMS.items():
+                    if marker in sample_data['expected_autosomal_loci']:
+                        if 'size_category' in params:
+                            if params['size_category'] == 'small':
+                                small_loci.append(marker)
+                            elif params['size_category'] == 'large':
+                                large_loci.append(marker)
+                
+                # 计算小片段和大片段区域的位点完整度
+                small_completeness = 0
+                large_completeness = 0
+                
+                if small_loci:
+                    small_with_info = sum(1 for locus in small_loci if locus in sample_data['effective_loci'])
+                    small_completeness = small_with_info / len(small_loci)
+                
+                if large_loci:
+                    large_with_info = sum(1 for locus in large_loci if locus in sample_data['effective_loci'])
+                    large_completeness = large_with_info / len(large_loci)
+                
+                # 计算比率
+                if large_completeness > 0:
+                    features['info_completeness_ratio_small_large'] = small_completeness / large_completeness
+                else:
+                    # 避免除零
+                    features['info_completeness_ratio_small_large'] = small_completeness / 1e-6 if small_completeness > 0 else 0
+            except:
+                features['info_completeness_ratio_small_large'] = 0
+            
+            # 等位基因频率信息特征（由于缺乏频率数据，设为NaN）
+            features['avg_allele_freq'] = np.nan
+            features['num_rare_alleles'] = np.nan
+            features['min_allele_freq'] = np.nan
+            features['avg_locus_sum_neg_log_freq'] = np.nan
+            
+            # 存储样本的特征
+            features_dict[sample_file] = features
+        
+        # 将特征转换为DataFrame
+        df_features_all = pd.DataFrame.from_dict(features_dict, orient='index')
+        
+        # 将特征与NoC_True合并
+        df_features_enhanced = df_features_enhanced.merge(df_features_all, left_index=True, right_index=True, how='left')
+        
+        # 重置索引，以便Sample File成为列
+        df_features_enhanced = df_features_enhanced.reset_index()
+        
+        # 填充缺失值
+        df_features_enhanced = df_features_enhanced.fillna(0)
     
-    df_features_v2_9.fillna(0, inplace=True)
-    df_features_v2_9.reset_index(inplace=True)
-
     print("\n--- 特征工程完成 ---")
-    print(f"最终特征数据框 df_features_v2_9 维度: {df_features_v2_9.shape}")
-    print_df_in_chinese(df_features_v2_9.head(), col_map=COLUMN_TRANSLATION_MAP, title="新特征数据框 (df_features_v2_9) 前5行")
+    print(f"最终特征数据框 df_features_enhanced 维度: {df_features_enhanced.shape}")
+    print_df_in_chinese(df_features_enhanced.head(), col_map=COLUMN_TRANSLATION_MAP, title="增强特征数据框 (df_features_enhanced) 前5行")
     
+    # 查看特征描述性统计
+    if not df_features_enhanced.empty:
+        numeric_cols = df_features_enhanced.select_dtypes(include=['number']).columns.drop('NoC_True')
+        feature_stats = df_features_enhanced[numeric_cols].describe()
+        print_df_in_chinese(feature_stats, col_map=COLUMN_TRANSLATION_MAP, index_item_map=DESCRIBE_INDEX_TRANSLATION_MAP, title="特征描述性统计")
+    
+    # 保存特征到文件
+    enhanced_feature_filename = os.path.join(DATA_DIR, 'prob1_features_enhanced.csv')
     try:
-        df_features_v2_9.to_csv(feature_filename_prob1, index=False, encoding='utf-8-sig')
-        print(f"特征数据已保存到: {feature_filename_prob1}")
+        df_features_enhanced.to_csv(enhanced_feature_filename, index=False, encoding='utf-8-sig')
+        print(f"增强特征数据已保存到: {enhanced_feature_filename}")
     except Exception as e:
-        print(f"错误: 保存特征数据失败: {e}")
+        print(f"错误: 保存增强特征数据失败: {e}")
+    
+    # 将增强特征赋值给主数据框用于后续处理
+    df_features_v2_9 = df_features_enhanced.copy()
+    feature_filename_prob1 = os.path.join(DATA_DIR, 'prob1_features_enhanced.csv')
 
-except Exception as e_feat_eng_v2_9:
-    print(f"严重错误: 在特征工程阶段发生错误: {e_feat_eng_v2_9}")
+except Exception as e_feat_eng_enhanced:
+    print(f"严重错误: 在增强特征工程阶段发生错误: {e_feat_eng_enhanced}")
     import traceback
-    traceback.print_exc();
-print("--- 步骤 3 完成 ---")
+    traceback.print_exc()
+    
+    # 如果增强特征工程失败，回退到基本特征工程
+    print("尝试回退到基本特征工程...")
+    try:
+        # 基本特征工程（与原始V2.91代码相同）
+        df_features_v2_9 = pd.DataFrame()
+        
+        if not df_processed_peaks.empty and 'CTA' in df_processed_peaks.columns and \
+           'Sample File' in df_processed_peaks.columns and 'Marker' in df_processed_peaks.columns and \
+           'Allele' in df_processed_peaks.columns and 'Height' in df_processed_peaks.columns:
+            
+            df_processed_peaks['Is_Effective_Allele'] = df_processed_peaks['CTA'] >= TRUE_ALLELE_CONFIDENCE_THRESHOLD
+            df_effective_alleles = df_processed_peaks[df_processed_peaks['Is_Effective_Allele']]
+            if df_effective_alleles.empty: 
+                print("警告: 应用CTA阈值后，没有剩余有效等位基因。特征将主要为0或NaN。")
+        else:
+            print("警告: df_processed_peaks 为空或缺少必要列，无法进行有效等位基因筛选。")
+            cols_for_empty_effective = ['Allele', 'Marker', 'Height', 'Sample File', 'Is_Effective_Allele']
+            base_cols = ['Allele', 'Allele_Numeric', 'Size', 'Height', 'Original_Height', 'CTA', 'Is_Stutter_Suspect', 'Stutter_Score_N_Minus_1', 'Sample File', 'Marker']
+            available_cols = [col for col in base_cols if col in df_processed_peaks.columns] if not df_processed_peaks.empty else ['Allele', 'Marker', 'Height', 'Sample File']
+            df_effective_alleles = pd.DataFrame(columns= available_cols + ['Is_Effective_Allele'])
 
+        all_sample_files_index_df = df_prob1[['Sample File', 'NoC_True']].drop_duplicates().set_index('Sample File')
+        df_features_v2_9 = pd.DataFrame(index=all_sample_files_index_df.index)
+        df_features_v2_9['NoC_True'] = all_sample_files_index_df['NoC_True']
+
+        feature_cols_to_init = [
+            'max_allele_per_sample', 'total_alleles_per_sample', 'avg_alleles_per_marker',
+            'markers_gt2_alleles', 'markers_gt3_alleles', 'markers_gt4_alleles',
+            'avg_peak_height', 'std_peak_height'
+        ]
+        for col in feature_cols_to_init:
+            df_features_v2_9[col] = 0.0
+
+        if not df_effective_alleles.empty and \
+           'Sample File' in df_effective_alleles.columns and \
+           'Marker' in df_effective_alleles.columns and \
+           'Allele' in df_effective_alleles.columns:
+            
+            n_eff_alleles_per_locus = df_effective_alleles.groupby(['Sample File', 'Marker'])['Allele'].nunique().rename('N_eff_alleles')
+            grouped_by_sample_eff = n_eff_alleles_per_locus.groupby('Sample File')
+
+            df_features_v2_9['max_allele_per_sample'] = grouped_by_sample_eff.max().reindex(df_features_v2_9.index)
+            df_features_v2_9['total_alleles_per_sample'] = grouped_by_sample_eff.sum().reindex(df_features_v2_9.index)
+            df_features_v2_9['avg_alleles_per_marker'] = grouped_by_sample_eff.mean().reindex(df_features_v2_9.index)
+            df_features_v2_9['markers_gt2_alleles'] = grouped_by_sample_eff.apply(lambda x: (x > 2).sum()).reindex(df_features_v2_9.index)
+            df_features_v2_9['markers_gt3_alleles'] = grouped_by_sample_eff.apply(lambda x: (x > 3).sum()).reindex(df_features_v2_9.index)
+            df_features_v2_9['markers_gt4_alleles'] = grouped_by_sample_eff.apply(lambda x: (x > 4).sum()).reindex(df_features_v2_9.index)
+            
+            if 'Height' in df_effective_alleles.columns:
+                grouped_heights_eff = df_effective_alleles.groupby('Sample File')['Height']
+                df_features_v2_9['avg_peak_height'] = grouped_heights_eff.mean().reindex(df_features_v2_9.index)
+                df_features_v2_9['std_peak_height'] = grouped_heights_eff.std().reindex(df_features_v2_9.index)
+            else:
+                print("警告: df_effective_alleles 缺少 'Height' 列，峰高相关特征无法计算。")
+        
+        df_features_v2_9.fillna(0, inplace=True)
+        df_features_v2_9.reset_index(inplace=True)
+        
+        print("回退到基本特征工程完成。")
+    except Exception as e_basic_feat:
+        print(f"严重错误: 基本特征工程也失败: {e_basic_feat}")
+        traceback.print_exc()
+        print("无法生成有效特征，将使用空特征框架。")
+        
+        # 创建一个最小化的特征框架
+        all_sample_files = df_prob1['Sample File'].unique()
+        noc_values = {sf: df_prob1[df_prob1['Sample File'] == sf]['NoC_True'].iloc[0] 
+                    for sf in all_sample_files if len(df_prob1[df_prob1['Sample File'] == sf]) > 0}
+        
+        df_features_v2_9 = pd.DataFrame({'Sample File': list(noc_values.keys()), 
+                                        'NoC_True': list(noc_values.values())})
+        
+        basic_features = ['max_allele_per_sample', 'total_alleles_per_sample', 'avg_alleles_per_marker',
+                          'markers_gt2_alleles', 'markers_gt3_alleles', 'markers_gt4_alleles',
+                          'avg_peak_height', 'std_peak_height']
+        
+        for col in basic_features:
+            df_features_v2_9[col] = 0.0
+print(f"最终特征数据框 df_features_v2_9 维度: {df_features_v2_9.shape}")
+print(f"\n--- 步骤 3: 特征工程完成 ---")
 # --- 步骤 4 & 5: 模型评估 (框架) ---
 # --- 步骤 4: 模型训练与验证 (版本 2.9) ---
 # --- 步骤 4: 模型训练与验证 (版本 2.91) ---
