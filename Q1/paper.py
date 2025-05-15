@@ -14,6 +14,7 @@ The implementation includes:
 4. Visualization of decision trees and performance metrics
 """
 
+from collections import Counter
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -39,6 +40,66 @@ DATA_DIR = './'
 PLOTS_DIR = './noc_plots'
 if not os.path.exists(PLOTS_DIR):
     os.makedirs(PLOTS_DIR)
+    
+def calculate_entropy(probabilities):
+    """
+    Calculate the entropy of a probability distribution.
+
+    Args:
+        probabilities (array-like): Probabilities of the distribution.
+
+    Returns:
+        float: Entropy value.
+    """
+    probabilities = np.array(probabilities)
+    probabilities = probabilities[probabilities > 0]  # Remove zero probabilities
+    return -np.sum(probabilities * np.log2(probabilities))
+
+def calculate_ols_slope(x, y):
+        """
+        Calculate the slope of the ordinary least squares (OLS) regression line.
+    
+        Args:
+            x (array-like): Independent variable values.
+            y (array-like): Dependent variable values.
+    
+        Returns:
+            float: Slope of the OLS regression line, or NaN if calculation fails.
+        """
+        if len(x) > 1 and len(y) > 1 and len(x) == len(y):
+            x = np.array(x)
+            y = np.array(y)
+            x_mean = np.mean(x)
+            y_mean = np.mean(y)
+            numerator = np.sum((x - x_mean) * (y - y_mean))
+            denominator = np.sum((x - x_mean) ** 2)
+            if denominator != 0:
+                return numerator / denominator
+        return np.nan
+
+def calculate_wls_slope(x, y, weights):
+        """
+        Calculate the slope of the weighted least squares (WLS) regression line.
+    
+        Args:
+            x (array-like): Independent variable values.
+            y (array-like): Dependent variable values.
+            weights (array-like): Weights for each data point.
+    
+        Returns:
+            float: Slope of the WLS regression line, or NaN if calculation fails.
+        """
+        if len(x) > 1 and len(y) > 1 and len(weights) > 1 and len(x) == len(y) == len(weights):
+            x = np.array(x)
+            y = np.array(y)
+            weights = np.array(weights)
+            x_mean = np.average(x, weights=weights)
+            y_mean = np.average(y, weights=weights)
+            numerator = np.sum(weights * (x - x_mean) * (y - y_mean))
+            denominator = np.sum(weights * (x - x_mean) ** 2)
+            if denominator != 0:
+                return numerator / denominator
+        return np.nan
 
 TRUE_ALLELE_CONFIDENCE_THRESHOLD = 0.5  # CTA threshold for true alleles
 
