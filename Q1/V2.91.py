@@ -991,20 +991,22 @@ print(f"\n--- 步骤 3: 特征工程完成 ---")
 # --- 步骤 4 & 5: 模型评估 (框架) ---
 # --- 步骤 4: 模型训练与验证 (版本 2.9) ---
 # --- 步骤 4: 模型训练与验证 (版本 2.91) ---
-print(f"\n--- 步骤 4: 模型训练与验证 (版本 2.91) ---")
+# --- 步骤 4: 模型训练与验证 (融合决策树方法) ---
+print(f"\n--- 步骤 4: 模型训练与验证 (版本 2.91 + 决策树) ---")
 
 try:
     from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
     from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
     from sklearn.ensemble import RandomForestClassifier, VotingClassifier, GradientBoostingClassifier, ExtraTreesClassifier
+    from sklearn.tree import DecisionTreeClassifier, export_graphviz, plot_tree
     from sklearn.preprocessing import StandardScaler
     import matplotlib.pyplot as plt
     import seaborn as sns
     from joblib import dump
+    import os
     
     # 准备数据
     X = df_features_v2_9.drop(['Sample File', 'NoC_True'], axis=1)
-    # int,string(NaN)
     y = df_features_v2_9['NoC_True']
     
     # 检查各特征的缺失值情况
@@ -1027,44 +1029,87 @@ try:
     print(f"训练集维度: {X_train.shape}, 测试集维度: {X_test.shape}")
     print(f"标签分布: {pd.Series(y).value_counts().sort_index().to_dict()}")
     
-    # 1. 随机森林模型
-    print("\n训练随机森林模型...")
-    
     # 定义分层交叉验证
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
-    # 随机森林模型
+    # 定义类别名称（用于可视化）
+    class_names = [f"{i}人" for i in sorted(y.unique())]
+    
+    # 1. 决策树模型 (从paper.py整合)
+    print("\n训练决策树模型...")
+    
+    dt_model = DecisionTreeClassifier(
+        max_depth=4,  # 根据paper.py中设置的默认值
+        class_weight='balanced',
+        criterion='gini',
+        random_state=42
+    )
+    
+    # 交叉验证评估决策树
+    dt_cv_scores = cross_val_score(dt_model, X_scaled, y, cv=cv, scoring='accuracy')
+    print(f"决策树交叉验证准确率: {dt_cv_scores.mean():.4f} (±{dt_cv_scores.std():.4f})")
+    
+    # 训练最终决策树模型
+    dt_model.fit(X_train, y_train)
+    
+    # 在测试集上评估决策树
+    y_pred_dt = dt_model.predict(X_test)
+    dt_accuracy = accuracy_score(y_test, y_pred_dt)
+    print(f"决策树测试集准确率: {dt_accuracy:.4f}")
+    
+    # 输出决策树分类报告
+    print("\n决策树分类报告:")
+    print(classification_report(y_test, y_pred_dt, target_names=class_names))
+    
+    # 可视化决策树 (从paper.py整合)
+    plt.figure(figsize=(20, 10))
+    plot_tree(dt_model, 
+              feature_names=X.columns, 
+              class_names=class_names,
+              filled=True, 
+              rounded=True, 
+              fontsize=10)
+    plt.title('决策树模型 (DNA贡献者人数分类)', fontsize=14)
+    plt.tight_layout()
+    decision_tree_path = os.path.join(PLOTS_DIR, 'decision_tree_v2.91.png')
+    plt.savefig(decision_tree_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"决策树可视化图已保存至: {decision_tree_path}")
+    
+    # 2. 随机森林模型 (保留原有代码)
+    print("\n训练随机森林模型...")
+    
     rf_model = RandomForestClassifier(
         n_estimators=100,
         max_depth=None,
         min_samples_split=2,
         min_samples_leaf=1,
         random_state=42,
-        class_weight='balanced'  # 处理类别不平衡
+        class_weight='balanced'
     )
     
-    # 交叉验证评估
+    # 交叉验证评估随机森林
     rf_cv_scores = cross_val_score(rf_model, X_scaled, y, cv=cv, scoring='accuracy')
     print(f"随机森林交叉验证准确率: {rf_cv_scores.mean():.4f} (±{rf_cv_scores.std():.4f})")
     
     # 训练最终随机森林模型
     rf_model.fit(X_train, y_train)
     
-    # 在测试集上评估
+    # 在测试集上评估随机森林
     y_pred_rf = rf_model.predict(X_test)
     rf_accuracy = accuracy_score(y_test, y_pred_rf)
     print(f"随机森林测试集准确率: {rf_accuracy:.4f}")
     
-    # 输出分类报告
-    class_names = [f"{i}人" for i in sorted(y.unique())]
+    # 输出随机森林分类报告
     print("\n随机森林分类报告:")
     print(classification_report(y_test, y_pred_rf, target_names=class_names))
     
-    # 2. 集成学习方法
-    print("\n训练集成学习模型...")
+    # 3. 集成学习方法 (增加决策树作为基学习器)
+    print("\n训练集成学习模型 (包含决策树)...")
     
-    # 准备基础估计器
+    # 准备基础估计器 (增加决策树)
     base_estimators = [
+        ('dt', DecisionTreeClassifier(max_depth=4, random_state=42, class_weight='balanced')),
         ('rf', RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')),
         ('et', ExtraTreesClassifier(n_estimators=100, random_state=42, class_weight='balanced')),
         ('gb', GradientBoostingClassifier(n_estimators=100, random_state=42))
@@ -1073,40 +1118,76 @@ try:
     # 投票分类器
     voting_clf = VotingClassifier(
         estimators=base_estimators,
-        voting='soft',  # 使用概率进行投票
-        weights=[2, 1, 1]  # 为随机森林分配更高权重
+        voting='soft',
+        weights=[1, 2, 1, 1]  # 为随机森林分配更高权重
     )
     
-    # 交叉验证评估
+    # 交叉验证评估投票分类器
     voting_cv_scores = cross_val_score(voting_clf, X_scaled, y, cv=cv, scoring='accuracy')
     print(f"投票分类器交叉验证准确率: {voting_cv_scores.mean():.4f} (±{voting_cv_scores.std():.4f})")
     
     # 训练最终投票分类器
     voting_clf.fit(X_train, y_train)
     
-    # 在测试集上评估
+    # 在测试集上评估投票分类器
     y_pred_voting = voting_clf.predict(X_test)
     voting_accuracy = accuracy_score(y_test, y_pred_voting)
     print(f"投票分类器测试集准确率: {voting_accuracy:.4f}")
     
-    # 输出分类报告
+    # 输出投票分类器分类报告
     print("\n投票分类器分类报告:")
     print(classification_report(y_test, y_pred_voting, target_names=class_names))
     
+    # 4. 模型比较与选择
     # 选择最佳模型
-    best_model_acc = max(rf_accuracy, voting_accuracy)
-    if rf_accuracy >= voting_accuracy:
+    model_accuracies = {
+        "决策树": dt_accuracy,
+        "随机森林": rf_accuracy, 
+        "投票分类器": voting_accuracy
+    }
+    
+    best_model_name = max(model_accuracies, key=model_accuracies.get)
+    best_model_acc = model_accuracies[best_model_name]
+    
+    if best_model_name == "决策树":
+        best_model = dt_model
+        y_pred = y_pred_dt
+    elif best_model_name == "随机森林":
         best_model = rf_model
-        best_model_name = "随机森林"
         y_pred = y_pred_rf
     else:
         best_model = voting_clf
-        best_model_name = "投票分类器"
         y_pred = y_pred_voting
     
     print(f"\n最佳模型: {best_model_name} (测试集准确率: {best_model_acc:.4f})")
     
-    # 绘制混淆矩阵
+    # 可视化比较所有模型性能
+    plt.figure(figsize=(12, 8))
+    model_names = list(model_accuracies.keys())
+    accuracies = [model_accuracies[name] for name in model_names]
+    
+    # 找出最佳模型颜色
+    colors = ['#1f77b4' if name != best_model_name else '#d62728' for name in model_names]
+    
+    # 创建性能比较柱状图
+    bars = plt.bar(model_names, accuracies, color=colors)
+    plt.ylim(0, 1.1)
+    plt.ylabel('准确率')
+    plt.xlabel('模型')
+    plt.title('各模型NoC识别准确率比较')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    # 添加准确率标签
+    for i, acc in enumerate(accuracies):
+        plt.text(i, acc + 0.03, f"{acc:.4f}", ha='center')
+    
+    # 保存模型比较图
+    model_comparison_path = os.path.join(PLOTS_DIR, 'model_comparison_v2.91.png')
+    plt.savefig(model_comparison_path)
+    plt.close()
+    print(f"模型比较图已保存至: {model_comparison_path}")
+    
+    # 绘制最佳模型的混淆矩阵
     plt.figure(figsize=(10, 8))
     cm = confusion_matrix(y_test, y_pred)
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
@@ -1115,10 +1196,11 @@ try:
     plt.title(f'{best_model_name}混淆矩阵')
     confusion_matrix_path = os.path.join(PLOTS_DIR, 'confusion_matrix_v2.91.png')
     plt.savefig(confusion_matrix_path)
+    plt.close()
     print(f"混淆矩阵已保存至: {confusion_matrix_path}")
     
-    # 特征重要性分析 (仅对随机森林)
-    if best_model_name == "随机森林":
+    # 特征重要性分析
+    if best_model_name in ["决策树", "随机森林"]:
         plt.figure(figsize=(14, 10))
         
         # 提取特征重要性并排序
@@ -1128,17 +1210,18 @@ try:
         }).sort_values('重要性', ascending=False)
         
         # 输出特征重要性
-        print("\n特征重要性排名 (前10):")
+        print(f"\n{best_model_name}特征重要性排名 (前10):")
         for idx, row in feature_importances.head(10).iterrows():
             print(f"{row['特征']: <30} {row['重要性']:.4f}")
         
         # 绘制前15个重要特征
         top_features = feature_importances.head(15)
         sns.barplot(x='重要性', y='特征', data=top_features)
-        plt.title('随机森林 - 特征重要性 (前15位)')
+        plt.title(f'{best_model_name} - 特征重要性 (前15位)')
         plt.tight_layout()
         feature_importance_path = os.path.join(PLOTS_DIR, 'feature_importance_v2.91.png')
         plt.savefig(feature_importance_path)
+        plt.close()
         print(f"特征重要性图已保存至: {feature_importance_path}")
     
     # 将最佳模型应用于全部数据
@@ -1150,9 +1233,42 @@ try:
     print(f"带预测结果的特征数据已保存至: {feature_filename_prob1}")
     
     # 保存模型
-    model_filename = os.path.join(DATA_DIR, f'noc_{best_model_name.lower().replace(" ", "_")}_v2.91.joblib')
+    model_filename = os.path.join(DATA_DIR, f'noc_{best_model_name}_v2.91.joblib')
     dump(best_model, model_filename)
     print(f"{best_model_name}模型已保存至: {model_filename}")
+    
+    # 增加来自不同过滤方法效果比较（模拟 paper.py 中的比较逻辑）
+    print("\n不同过滤方法假设性比较 (从 paper.py 整合):")
+    print("注意: 真实比较需要不同过滤方法处理后的数据。这里仅做概念演示。")
+    
+    filter_methods = ["当前版本 (v2.91)", "假设性AT过滤", "参考性能 (理论上限)"]
+    
+    # 这里假设的准确率值，实际使用时应从不同版本的真实结果填入
+    hypothetical_accuracies = [
+        best_model_acc,  # 当前准确率
+        best_model_acc * 0.95,  # 假设的AT过滤版本（略低）
+        best_model_acc * 1.05   # 假设的理论上限（略高）
+    ]
+    
+    # 绘制过滤方法比较
+    plt.figure(figsize=(10, 6))
+    colors = ['#d62728', '#1f77b4', '#2ca02c']
+    bars = plt.bar(filter_methods, hypothetical_accuracies, color=colors)
+    plt.ylim(0, 1.1)
+    plt.ylabel('假设性准确率')
+    plt.xlabel('过滤方法')
+    plt.title('不同过滤方法对NoC识别准确率的假设影响')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    # 添加准确率标签
+    for i, acc in enumerate(hypothetical_accuracies):
+        plt.text(i, acc + 0.03, f"{acc:.4f}", ha='center')
+    
+    filtering_comparison_path = os.path.join(PLOTS_DIR, 'filtering_comparison_v2.91.png')
+    plt.savefig(filtering_comparison_path)
+    plt.close()
+    print(f"过滤方法比较图已保存至: {filtering_comparison_path}")
+    print("注: 此比较为概念演示，实际使用时应基于不同过滤方法处理的真实数据进行比较")
     
 except ModuleNotFoundError as e:
     print(f"错误: 缺少必要的库 - {e}")
@@ -1167,7 +1283,6 @@ except Exception as e_model:
         df_features_v2_9['baseline_pred'] = df_features_v2_9['NoC_True']  # 临时使用真实标签
 
 print("--- 步骤 4 完成 ---")
-
 # --- 步骤 5: 模型评估与结果分析 ---
 print(f"\n--- 步骤 5: 模型评估与结果分析 (版本 2.91) ---")
 
