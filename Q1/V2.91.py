@@ -992,7 +992,8 @@ print(f"\n--- 步骤 3: 特征工程完成 ---")
 # --- 步骤 4: 模型训练与验证 (版本 2.9) ---
 # --- 步骤 4: 模型训练与验证 (版本 2.91) ---
 # --- 步骤 4: 模型训练与验证 (融合决策树方法) ---
-print(f"\n--- 步骤 4: 模型训练与验证 (版本 2.91 + 决策树) ---")
+# --- 步骤 4: 模型训练与验证 (基于LassoCV筛选特征) ---
+print(f"\n--- 步骤 4: 模型训练与验证 (版本 2.91 + 决策树 + LassoCV特征) ---")
 
 try:
     from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
@@ -1005,8 +1006,41 @@ try:
     from joblib import dump
     import os
     
-    # 准备数据
-    X = df_features_v2_9.drop(['Sample File', 'NoC_True'], axis=1)
+    # 使用LassoCV筛选的14个特征
+    lasso_selected_features = [
+        'mac_profile', 
+        'total_distinct_alleles', 
+        'avg_alleles_per_locus', 
+        'loci_gt3_alleles', 
+        'loci_gt6_alleles', 
+        'avg_peak_height', 
+        'num_loci_with_phr', 
+        'ratio_severe_imbalance_loci', 
+        'skewness_peak_height', 
+        'modality_peak_height', 
+        'inter_locus_balance_entropy', 
+        'avg_locus_allele_entropy', 
+        'peak_height_entropy', 
+        'height_size_correlation'
+    ]
+    
+    print("使用LassoCV筛选的14个特征进行模型训练:")
+    for i, feature in enumerate(lasso_selected_features, 1):
+        print(f"{i}. {feature}")
+    
+    # 准备数据 - 只使用筛选后的特征
+    # 首先检查这些特征是否都存在
+    available_features = [f for f in lasso_selected_features if f in df_features_v2_9.columns]
+    missing_features = [f for f in lasso_selected_features if f not in df_features_v2_9.columns]
+    
+    if missing_features:
+        print(f"警告: 以下特征在数据框中不存在，将被忽略: {missing_features}")
+    
+    if len(available_features) < len(lasso_selected_features):
+        print(f"实际使用 {len(available_features)}/{len(lasso_selected_features)} 个筛选特征")
+    
+    # 选择特征和目标变量
+    X = df_features_v2_9[available_features].copy()
     y = df_features_v2_9['NoC_True']
     
     # 检查各特征的缺失值情况

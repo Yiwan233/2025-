@@ -1,13 +1,13 @@
 {
     "top_features": [
-        "avg_locus_allele_entropy",
         "avg_alleles_per_locus",
-        "total_distinct_alleles",
         "avg_peak_height",
-        "weighted_height_size_slope",
-        "height_size_slope",
-        "std_alleles_per_locus",
-        "skewness_peak_height"
+        "avg_locus_allele_entropy",
+        "skewness_peak_height",
+        "loci_gt6_alleles",
+        "total_distinct_alleles",
+        "mac_profile",
+        "loci_gt3_alleles"
     ],
-    "analysis_date": "2025-05-16 20:20:42"
+    "analysis_date": "2025-05-17 21:52:36"
 }
