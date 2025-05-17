@@ -1623,3 +1623,152 @@ except Exception as e_shap:
 
 print("--- SHAP分析完成 ---")
 print(f"\n脚本 {os.path.basename(__file__)} (版本 2.9) 执行完毕。")
+
+# --- ROC曲线与AUC评分分析 ---
+print("\n--- ROC曲线与AUC评分分析 ---")
+
+try:
+    from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
+    from sklearn.preprocessing import label_binarize
+    from sklearn.multiclass import OneVsRestClassifier
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.cm as cm
+    
+    # 确保我们有训练好的模型和测试数据
+    if 'X_test' in locals() and 'y_test' in locals() and 'best_model' in locals():
+        # 获取唯一类别
+        classes = sorted(np.unique(y))
+        n_classes = len(classes)
+        
+        # 将标签进行二值化处理用于多分类ROC计算
+        y_test_bin = label_binarize(y_test, classes=classes)
+        
+        # 初始化图表
+        plt.figure(figsize=(12, 10))
+        
+        # 如果模型已经有predict_proba方法（如随机森林、决策树等）
+        if hasattr(best_model, 'predict_proba'):
+            # 直接使用模型
+            y_score = best_model.predict_proba(X_test)
+            
+            # 为每个类别计算ROC曲线和AUC
+            fpr = dict()
+            tpr = dict()
+            roc_auc = dict()
+            
+            for i in range(n_classes):
+                fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_score[:, i])
+                roc_auc[i] = auc(fpr[i], tpr[i])
+            
+            # 计算微平均ROC曲线和AUC
+            fpr["micro"], tpr["micro"], _ = roc_curve(y_test_bin.ravel(), y_score.ravel())
+            roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+            
+            # 绘制所有ROC曲线
+            colors = cm.rainbow(np.linspace(0, 1, n_classes))
+            
+            # 绘制每个类别的ROC曲线
+            for i, color in zip(range(n_classes), colors):
+                plt.plot(fpr[i], tpr[i], color=color, lw=2,
+                         label=f'类别 {classes[i]} 的ROC曲线 (AUC = {roc_auc[i]:.2f})')
+            
+            # 绘制微平均ROC曲线
+            plt.plot(fpr["micro"], tpr["micro"],
+                     label=f'微平均ROC曲线 (AUC = {roc_auc["micro"]:.2f})',
+                     color='deeppink', linestyle=':', linewidth=4)
+            
+            # 绘制随机猜测的ROC曲线
+            plt.plot([0, 1], [0, 1], 'k--', lw=2)
+            
+            # 设置图表
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('假正例率 (FPR)')
+            plt.ylabel('真正例率 (TPR)')
+            plt.title(f'{best_model_name}的ROC曲线')
+            plt.legend(loc="lower right")
+            
+            # 保存ROC曲线图
+            roc_curve_path = os.path.join(PLOTS_DIR, 'roc_curve_v2.91.png')
+            plt.savefig(roc_curve_path)
+            plt.close()
+            print(f"ROC曲线图已保存至: {roc_curve_path}")
+            
+            # 打印每个类别的AUC值
+            print("\n各类别AUC值:")
+            for i in range(n_classes):
+                print(f"类别 {classes[i]}: AUC = {roc_auc[i]:.4f}")
+            print(f"微平均AUC: {roc_auc['micro']:.4f}")
+            
+            # 绘制精确率-召回率曲线
+            plt.figure(figsize=(12, 10))
+            
+            # 计算每个类别的PR曲线
+            precision = dict()
+            recall = dict()
+            avg_precision = dict()
+            
+            for i in range(n_classes):
+                precision[i], recall[i], _ = precision_recall_curve(y_test_bin[:, i], y_score[:, i])
+                avg_precision[i] = average_precision_score(y_test_bin[:, i], y_score[:, i])
+            
+            # 绘制每个类别的PR曲线
+            for i, color in zip(range(n_classes), colors):
+                plt.plot(recall[i], precision[i], color=color, lw=2,
+                         label=f'类别 {classes[i]} 的PR曲线 (AP = {avg_precision[i]:.2f})')
+            
+            # 设置图表
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('召回率 (Recall)')
+            plt.ylabel('精确率 (Precision)')
+            plt.title(f'{best_model_name}的精确率-召回率曲线')
+            plt.legend(loc="lower left")
+            
+            # 保存PR曲线图
+            pr_curve_path = os.path.join(PLOTS_DIR, 'pr_curve_v2.91.png')
+            plt.savefig(pr_curve_path)
+            plt.close()
+            print(f"精确率-召回率曲线图已保存至: {pr_curve_path}")
+            
+            # 打印每个类别的AP值
+            print("\n各类别平均精确率(AP)值:")
+            for i in range(n_classes):
+                print(f"类别 {classes[i]}: AP = {avg_precision[i]:.4f}")
+            
+        else:
+            # 如果模型没有predict_proba方法
+            print(f"警告: {best_model_name}不支持概率预测，无法计算ROC曲线和AUC。")
+            
+        # 创建混淆矩阵热图(归一化)
+        plt.figure(figsize=(10, 8))
+        cm_test = confusion_matrix(y_test, y_pred)
+        cm_test_norm = cm_test.astype('float') / cm_test.sum(axis=1)[:, np.newaxis]
+        
+        # 绘制混淆矩阵
+        sns.heatmap(cm_test_norm, annot=True, fmt='.2f', cmap='Blues',
+                   xticklabels=[f"{c}" for c in classes],
+                   yticklabels=[f"{c}" for c in classes])
+        plt.xlabel('预测标签')
+        plt.ylabel('真实标签')
+        plt.title(f'{best_model_name}混淆矩阵 (归一化)')
+        
+        # 保存混淆矩阵
+        cm_norm_path = os.path.join(PLOTS_DIR, 'confusion_matrix_norm_v2.91.png')
+        plt.savefig(cm_norm_path)
+        plt.close()
+        print(f"归一化混淆矩阵已保存至: {cm_norm_path}")
+        
+    else:
+        print("错误: 模型训练未完成或测试数据不可用，无法生成ROC曲线和计算AUC。")
+
+except ModuleNotFoundError as e:
+    print(f"错误: 缺少必要的库 - {e}")
+    print("请安装所需库: pip install scikit-learn matplotlib")
+except Exception as e:
+    print(f"ROC曲线生成过程中发生错误: {e}")
+    import traceback
+    traceback.print_exc()
+
+print("--- ROC/AUC分析完成 ---")
