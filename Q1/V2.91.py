@@ -1317,6 +1317,343 @@ except Exception as e_model:
         df_features_v2_9['baseline_pred'] = df_features_v2_9['NoC_True']  # 临时使用真实标签
 
 print("--- 步骤 4 完成 ---")
+
+# --- 改进交叉验证收敛性分析 ---
+print("\n--- 改进交叉验证收敛性分析 ---")
+
+try:
+    from sklearn.model_selection import RepeatedStratifiedKFold, learning_curve, ShuffleSplit
+    from sklearn.base import clone
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import os
+    
+    # 确保我们有训练好的模型和特征数据
+    if 'best_model' in locals() and 'X_scaled' in locals() and 'y' in locals():
+        
+        print("1. 实施重复交叉验证以提高收敛性...")
+        
+        # 使用重复分层交叉验证 (10次重复的5折交叉验证)
+        repeated_cv = RepeatedStratifiedKFold(
+            n_splits=5,        # 5折
+            n_repeats=10,      # 重复10次
+            random_state=42
+        )
+        
+        # 使用重复交叉验证评估模型
+        repeated_cv_scores = cross_val_score(
+            best_model, 
+            X_scaled, 
+            y, 
+            cv=repeated_cv, 
+            scoring='accuracy',
+            n_jobs=-1          # 使用所有可用的CPU
+        )
+        
+        # 计算平均准确率和标准差
+        mean_accuracy = repeated_cv_scores.mean()
+        std_accuracy = repeated_cv_scores.std()
+        
+        print(f"重复交叉验证 (5折×10次) 准确率: {mean_accuracy:.4f} ± {std_accuracy:.4f}")
+        print(f"收敛性指标 (标准差/均值): {(std_accuracy/mean_accuracy):.4f}")
+        
+        # 判断收敛性
+        if std_accuracy < 0.05:
+            print("✓ 良好的收敛性 - 标准差小于5%")
+        elif std_accuracy < 0.1:
+            print("⚠ 中等收敛性 - 标准差在5%-10%之间")
+        else:
+            print("✗ 较差的收敛性 - 标准差大于10%")
+        
+        # 绘制重复交叉验证的分布
+        plt.figure(figsize=(10, 6))
+        sns.histplot(repeated_cv_scores, kde=True, bins=20)
+        plt.axvline(mean_accuracy, color='r', linestyle='--', 
+                   label=f'平均准确率: {mean_accuracy:.4f}')
+        plt.axvline(mean_accuracy - std_accuracy, color='g', linestyle=':', 
+                   label=f'-1 标准差: {mean_accuracy-std_accuracy:.4f}')
+        plt.axvline(mean_accuracy + std_accuracy, color='g', linestyle=':', 
+                   label=f'+1 标准差: {mean_accuracy+std_accuracy:.4f}')
+        plt.xlabel('准确率')
+        plt.ylabel('频次')
+        plt.title('重复交叉验证准确率分布')
+        plt.legend()
+        plt.grid(True)
+        
+        # 保存重复交叉验证分布图
+        repeated_cv_path = os.path.join(PLOTS_DIR, 'repeated_cv_distribution_v2.91.png')
+        plt.savefig(repeated_cv_path)
+        plt.close()
+        print(f"重复交叉验证分布图已保存至: {repeated_cv_path}")
+        
+        print("\n2. 生成学习曲线以分析模型收敛性...")
+        
+        # 计算学习曲线
+        train_sizes = np.linspace(0.1, 1.0, 10)  # 从10%到100%的训练数据，共10个点
+        train_sizes, train_scores, valid_scores = learning_curve(
+            best_model,
+            X_scaled,
+            y,
+            train_sizes=train_sizes,
+            cv=5,                  # 5折交叉验证
+            scoring='accuracy',
+            random_state=42,
+            n_jobs=-1
+        )
+        
+        # 计算平均值和标准差
+        train_mean = np.mean(train_scores, axis=1)
+        train_std = np.std(train_scores, axis=1)
+        valid_mean = np.mean(valid_scores, axis=1)
+        valid_std = np.std(valid_scores, axis=1)
+        
+        # 绘制学习曲线
+        plt.figure(figsize=(12, 8))
+        plt.plot(train_sizes, train_mean, 'o-', color='r', label='训练集准确率')
+        plt.plot(train_sizes, valid_mean, 'o-', color='g', label='验证集准确率')
+        plt.fill_between(train_sizes, train_mean - train_std, 
+                         train_mean + train_std, alpha=0.1, color='r')
+        plt.fill_between(train_sizes, valid_mean - valid_std, 
+                         valid_mean + valid_std, alpha=0.1, color='g')
+        plt.xlabel('训练样本比例')
+        plt.ylabel('准确率')
+        plt.title('学习曲线分析 - 验证收敛性')
+        plt.legend(loc='best')
+        plt.grid(True)
+        
+        # 保存学习曲线图
+        learning_curve_path = os.path.join(PLOTS_DIR, 'learning_curve_v2.91.png')
+        plt.savefig(learning_curve_path)
+        plt.close()
+        print(f"学习曲线图已保存至: {learning_curve_path}")
+        
+        # 分析学习曲线收敛性
+        final_gap = abs(train_mean[-1] - valid_mean[-1])
+        final_std = valid_std[-1]
+        valid_improvement = valid_mean[-1] - valid_mean[0]
+        
+        print(f"学习曲线分析结果:")
+        print(f"- 最终训练/验证集差距: {final_gap:.4f}")
+        print(f"- 最终验证集标准差: {final_std:.4f}")
+        print(f"- 验证集性能提升: {valid_improvement:.4f}")
+        
+        if final_gap < 0.05:
+            print("✓ 训练集和验证集性能接近 - 良好的泛化能力")
+        elif final_gap < 0.1:
+            print("⚠ 训练集和验证集有一定差距 - 存在轻微过拟合")
+        else:
+            print("✗ 训练集和验证集差距较大 - 明显过拟合")
+            
+        if final_std < 0.05:
+            print("✓ 验证集标准差小 - 模型在不同折叠上表现稳定")
+        else:
+            print("⚠ 验证集标准差较大 - 模型在不同折叠上表现不稳定")
+            
+        if valid_mean[-1] > 0.7 and valid_improvement > 0.1:
+            print("✓ 验证集性能随样本增加明显提升 - 数据对模型有价值")
+        elif valid_mean[-1] > 0.7:
+            print("⚠ 验证集性能较好但提升有限 - 可能需要更复杂的模型")
+        else:
+            print("✗ 验证集性能不佳 - 需要更好的特征或不同的模型")
+            
+        print("\n3. 分析训练集大小与验证稳定性关系...")
+        
+        # 定义不同训练集大小
+        train_size_fractions = np.linspace(0.3, 0.9, 7)  # 从30%到90%
+        train_sizes_absolute = (train_size_fractions * len(X_scaled)).astype(int)
+        std_devs = []
+        mean_scores = []
+        
+        for size in train_size_fractions:
+            # 对每个训练集大小，进行多次随机分割并计算准确率
+            cv = ShuffleSplit(n_splits=10, test_size=1-size, random_state=42)
+            scores = cross_val_score(best_model, X_scaled, y, cv=cv, scoring='accuracy')
+            std_devs.append(scores.std())
+            mean_scores.append(scores.mean())
+        
+        # 绘制训练集大小与标准差的关系
+        plt.figure(figsize=(12, 8))
+        plt.subplot(2, 1, 1)
+        plt.plot(train_sizes_absolute, std_devs, 'o-', color='b')
+        plt.xlabel('训练样本数')
+        plt.ylabel('验证准确率标准差')
+        plt.title('训练集大小与验证稳定性关系')
+        plt.grid(True)
+        
+        plt.subplot(2, 1, 2)
+        plt.plot(train_sizes_absolute, mean_scores, 'o-', color='g')
+        plt.xlabel('训练样本数')
+        plt.ylabel('平均验证准确率')
+        plt.title('训练集大小与验证准确率关系')
+        plt.grid(True)
+        
+        plt.tight_layout()
+        
+        # 保存标准差曲线图
+        std_curve_path = os.path.join(PLOTS_DIR, 'stability_curve_v2.91.png')
+        plt.savefig(std_curve_path)
+        plt.close()
+        print(f"验证稳定性分析图已保存至: {std_curve_path}")
+        
+        # 分析训练样本量与标准差的关系
+        std_improvement = std_devs[0] - std_devs[-1]
+        relative_improvement = std_improvement / std_devs[0] if std_devs[0] > 0 else 0
+        
+        print(f"验证稳定性分析结果:")
+        print(f"- 小样本(30%)标准差: {std_devs[0]:.4f}")
+        print(f"- 大样本(90%)标准差: {std_devs[-1]:.4f}")
+        print(f"- 相对改善率: {relative_improvement:.2%}")
+        
+        if std_devs[-1] < 0.03:
+            print("✓ 大样本验证非常稳定 (标准差 < 3%)")
+        elif std_devs[-1] < 0.05:
+            print("✓ 大样本验证较为稳定 (标准差 < 5%)")
+        elif relative_improvement > 0.3:
+            print("⚠ 验证稳定性随样本增加明显改善，但仍有波动")
+        else:
+            print("✗ 验证稳定性改善有限，可能需要更多样本或更稳定的模型")
+        
+        print("\n4. 自助法(Bootstrap)评估置信区间...")
+        
+        # 使用自助法估计模型性能及置信区间
+        from sklearn.utils import resample
+        
+        n_iterations = 500  # 自助法迭代次数
+        bootstrap_scores = []
+        
+        for i in range(n_iterations):
+            # 自助法采样
+            indices = resample(range(len(X_scaled)), random_state=i)
+            X_boot, y_boot = X_scaled.iloc[indices], y.iloc[indices]
+            
+            # 训练模型
+            boot_model = clone(best_model)
+            boot_model.fit(X_boot, y_boot)
+            
+            # 在未被采样的数据上评估 (Out-of-Bag评估)
+            oob_indices = list(set(range(len(X_scaled))) - set(indices))
+            if len(oob_indices) > 0:  # 确保有未被采样的数据
+                X_oob = X_scaled.iloc[oob_indices]
+                y_oob = y.iloc[oob_indices]
+                score = boot_model.score(X_oob, y_oob)
+                bootstrap_scores.append(score)
+        
+        # 计算置信区间
+        bootstrap_scores = np.array(bootstrap_scores)
+        confidence_interval = np.percentile(bootstrap_scores, [2.5, 97.5])
+        
+        print(f"自助法评估结果:")
+        print(f"- 平均准确率: {bootstrap_scores.mean():.4f}")
+        print(f"- 标准差: {bootstrap_scores.std():.4f}")
+        print(f"- 95%置信区间: [{confidence_interval[0]:.4f}, {confidence_interval[1]:.4f}]")
+        print(f"- 置信区间宽度: {confidence_interval[1] - confidence_interval[0]:.4f}")
+        
+        # 绘制自助法分布
+        plt.figure(figsize=(12, 8))
+        sns.histplot(bootstrap_scores, kde=True, bins=30)
+        plt.axvline(confidence_interval[0], color='r', linestyle='--', 
+                   label=f'2.5% 分位点: {confidence_interval[0]:.4f}')
+        plt.axvline(confidence_interval[1], color='r', linestyle='--', 
+                   label=f'97.5% 分位点: {confidence_interval[1]:.4f}')
+        plt.axvline(bootstrap_scores.mean(), color='g', 
+                   label=f'平均值: {bootstrap_scores.mean():.4f}')
+        plt.xlabel('准确率')
+        plt.ylabel('频次')
+        plt.title('自助法评估 - 模型性能分布')
+        plt.legend()
+        plt.grid(True)
+        
+        # 保存自助法分布图
+        bootstrap_path = os.path.join(PLOTS_DIR, 'bootstrap_distribution_v2.91.png')
+        plt.savefig(bootstrap_path)
+        plt.close()
+        print(f"自助法分布图已保存至: {bootstrap_path}")
+        
+        # 分析置信区间
+        ci_width = confidence_interval[1] - confidence_interval[0]
+        
+        if ci_width < 0.05:
+            print("✓ 置信区间窄 (< 5%) - 非常稳定的模型表现")
+        elif ci_width < 0.1:
+            print("✓ 置信区间较窄 (< 10%) - 较稳定的模型表现")
+        else:
+            print("⚠ 置信区间宽 (≥ 10%) - 模型表现有较大波动")
+        
+        print("\n5. 综合评估收敛性...")
+        
+        # 不同方法评估结果比较
+        if 'dt_cv_scores' in locals() and 'rf_cv_scores' in locals():
+            dt_mean = dt_cv_scores.mean()
+            rf_mean = rf_cv_scores.mean()
+            
+            print("不同模型与评估方法结果比较:")
+            print(f"- 决策树交叉验证: {dt_mean:.4f}")
+            print(f"- 随机森林交叉验证: {rf_mean:.4f}")
+            print(f"- 重复交叉验证: {mean_accuracy:.4f}")
+            print(f"- 自助法评估: {bootstrap_scores.mean():.4f}")
+            
+            # 结果一致性分析
+            results = [dt_mean, rf_mean, mean_accuracy, bootstrap_scores.mean()]
+            max_diff = max(results) - min(results)
+            
+            if max_diff < 0.05:
+                print("✓ 不同评估方法结果一致性高 (差异 < 5%)")
+            elif max_diff < 0.1:
+                print("⚠ 不同评估方法结果一致性中等 (差异 < 10%)")
+            else:
+                print("✗ 不同评估方法结果差异较大 (差异 ≥ 10%)")
+        
+        print("\n收敛性分析总结:")
+        
+        # 根据所有评估结果给出总体收敛性评级
+        convergence_rating = ""
+        
+        if std_accuracy < 0.05 and ci_width < 0.1 and final_std < 0.05:
+            convergence_rating = "很好"
+            print("✓✓✓ 模型验证收敛性很好 - 表现稳定可靠")
+        elif std_accuracy < 0.07 and ci_width < 0.15 and final_std < 0.07:
+            convergence_rating = "良好"
+            print("✓✓ 模型验证收敛性良好 - 表现相对稳定")
+        elif std_accuracy < 0.1 and ci_width < 0.2 and final_std < 0.1:
+            convergence_rating = "一般"
+            print("✓ 模型验证收敛性一般 - 有一定波动，但可接受")
+        else:
+            convergence_rating = "较差"
+            print("⚠ 模型验证收敛性较差 - 表现波动较大，需谨慎使用")
+        
+        # 保存收敛性分析结果
+        convergence_results = {
+            "repeated_cv_mean": float(mean_accuracy),
+            "repeated_cv_std": float(std_accuracy),
+            "learning_curve_final_gap": float(final_gap),
+            "learning_curve_final_std": float(final_std),
+            "bootstrap_ci_width": float(ci_width),
+            "bootstrap_mean": float(bootstrap_scores.mean()),
+            "convergence_rating": convergence_rating,
+            "timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        # 保存结果到JSON文件
+        import json
+        convergence_file = os.path.join(DATA_DIR, 'convergence_analysis_v2.91.json')
+        with open(convergence_file, 'w', encoding='utf-8') as f:
+            json.dump(convergence_results, f, ensure_ascii=False, indent=4)
+        
+        print(f"收敛性分析结果已保存至: {convergence_file}")
+        
+    else:
+        print("错误: 模型训练未完成或缺少必要数据，无法进行收敛性分析。")
+
+except ModuleNotFoundError as e:
+    print(f"错误: 缺少必要的库 - {e}")
+    print("请安装所需库: pip install scikit-learn matplotlib seaborn pandas numpy")
+except Exception as e:
+    print(f"收敛性分析过程中发生错误: {e}")
+    import traceback
+    traceback.print_exc()
+
+print("--- 收敛性分析完成 ---")
 # --- 步骤 5: 模型评估与结果分析 ---
 print(f"\n--- 步骤 5: 模型评估与结果分析 (版本 2.91) ---")
 
@@ -1772,3 +2109,290 @@ except Exception as e:
     traceback.print_exc()
 
 print("--- ROC/AUC分析完成 ---")
+
+# --- PIP (排列重要性) 和 PDP (部分依赖图) 分析 ---
+# --- PIP (排列重要性) 和 PDP (部分依赖图) 分析 ---
+print("\n--- PIP 排列重要性 和 PDP 部分依赖图 分析 ---")
+
+try:
+    from sklearn.inspection import permutation_importance
+    # 使用 sklearn.inspection.PartialDependenceDisplay 替代旧的 plot_partial_dependence
+    from sklearn.inspection import PartialDependenceDisplay
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import pandas as pd
+    from time import time
+    import warnings
+    
+    warnings.filterwarnings('ignore')
+    
+    # 确保我们有训练好的模型和测试数据
+    if 'X_test' in locals() and 'y_test' in locals() and 'best_model' in locals():
+        # 1. 排列重要性分析 (PIP)
+        print("计算排列重要性 (PIP)...")
+        
+        # 计算时可能较慢，所以显示进度提示
+        start_time = time()
+        
+        # 计算排列重要性
+        perm_importance = permutation_importance(
+            best_model, X_test, y_test,
+            n_repeats=10,       # 重复次数
+            random_state=42,
+            n_jobs=-1           # 使用所有可用CPU加速
+        )
+        
+        print(f"排列重要性计算完成，耗时: {time() - start_time:.2f} 秒")
+        
+        # 整理重要性结果
+        perm_imp_df = pd.DataFrame({
+            '特征': X_test.columns,
+            '重要性': perm_importance.importances_mean,
+            '标准差': perm_importance.importances_std
+        }).sort_values('重要性', ascending=False)
+        
+        # 输出排列重要性结果
+        print("\n排列重要性排名:")
+        for idx, row in perm_imp_df.head(10).iterrows():
+            print(f"{row['特征']: <30} {row['重要性']:.4f} ± {row['标准差']:.4f}")
+        
+        # 绘制排列重要性图
+        plt.figure(figsize=(12, 8))
+        # 只展示前10个特征以保持清晰
+        top_features = perm_imp_df.head(10)
+        
+        # 使用matplotlib的基础绘图函数而不是seaborn，避免xerr问题
+        y_pos = np.arange(len(top_features))
+        plt.barh(y_pos, top_features['重要性'], 
+                 xerr=top_features['标准差'],
+                 align='center',
+                 color='steelblue',
+                 capsize=5)
+        plt.yticks(y_pos, top_features['特征'])
+        plt.xlabel('重要性 (降低准确率的程度)')
+        plt.title(f'{best_model_name} - 排列重要性排名 (前10个特征)')
+        plt.tight_layout()
+        
+        # 保存排列重要性图
+        pip_path = os.path.join(PLOTS_DIR, 'permutation_importance_v2.91.png')
+        plt.savefig(pip_path)
+        plt.close()
+        print(f"排列重要性图已保存至: {pip_path}")
+        
+        # 2. 部分依赖图 (PDP) 分析
+        print("\n生成部分依赖图 (PDP)...")
+        
+        # 选择最重要的几个特征进行PDP分析
+        top_n_features = min(5, len(perm_imp_df))  # 最多取前5个特征
+        pdp_features = perm_imp_df['特征'].iloc[:top_n_features].tolist()
+        
+        print(f"为以下特征生成PDP图: {pdp_features}")
+        
+        # 检查选定特征是否在X_train中
+        valid_pdp_features = [f for f in pdp_features if f in X_train.columns]
+        
+        # 为每个选定特征生成单独的PDP图
+        for feature in valid_pdp_features:
+            try:
+                # 创建一个新的图形
+                fig, ax = plt.subplots(figsize=(8, 6))
+                
+                # 使用新的PartialDependenceDisplay API
+                feature_idx = list(X_train.columns).index(feature)
+                pdp_display = PartialDependenceDisplay.from_estimator(
+                    best_model, 
+                    X_train, 
+                    [feature_idx],  # 对于部分sklearn版本，需要使用索引而非名称
+                    kind='average',
+                    grid_resolution=50,
+                    random_state=42,
+                    ax=ax
+                )
+                
+                plt.title(f'特征 "{feature}" 的部分依赖图')
+                plt.tight_layout()
+                
+                # 保存单个PDP图
+                pdp_path = os.path.join(PLOTS_DIR, f'pdp_{feature}_v2.91.png')
+                plt.savefig(pdp_path)
+                plt.close()
+                print(f"特征 {feature} 的PDP图已保存至: {pdp_path}")
+            
+            except Exception as e_pdp:
+                print(f"为特征 {feature} 生成PDP图时出错: {e_pdp}")
+                print("尝试替代方法...")
+                
+                try:
+                    # 替代方法：手动生成简化版的依赖图
+                    feature_values = np.linspace(
+                        X_train[feature].min(),
+                        X_train[feature].max(),
+                        num=50
+                    )
+                    
+                    # 创建测试数据，在目标特征上变化，其他特征使用平均值
+                    X_pdp = np.tile(X_train.mean().values, (len(feature_values), 1))
+                    feature_idx = list(X_train.columns).index(feature)
+                    X_pdp[:, feature_idx] = feature_values
+                    
+                    # 得到预测
+                    if hasattr(best_model, "predict_proba"):
+                        # 对于分类问题，使用每个类别的概率
+                        y_pred = best_model.predict_proba(X_pdp)
+                        
+                        # 创建图表
+                        plt.figure(figsize=(10, 6))
+                        
+                        # 对于多分类，绘制每个类别的概率
+                        for i, class_label in enumerate(np.unique(y)):
+                            plt.plot(feature_values, y_pred[:, i], 
+                                    label=f'类别 {class_label}')
+                        
+                        plt.legend()
+                        plt.xlabel(feature)
+                        plt.ylabel('预测概率')
+                        plt.title(f'特征 "{feature}" 的手动部分依赖图')
+                        plt.grid(True)
+                    else:
+                        # 对于回归问题
+                        y_pred = best_model.predict(X_pdp)
+                        
+                        plt.figure(figsize=(10, 6))
+                        plt.plot(feature_values, y_pred)
+                        plt.xlabel(feature)
+                        plt.ylabel('预测值')
+                        plt.title(f'特征 "{feature}" 的手动部分依赖图')
+                        plt.grid(True)
+                    
+                    # 保存手动PDP图
+                    manual_pdp_path = os.path.join(PLOTS_DIR, f'manual_pdp_{feature}_v2.91.png')
+                    plt.savefig(manual_pdp_path)
+                    plt.close()
+                    print(f"手动生成的PDP图已保存至: {manual_pdp_path}")
+                    
+                except Exception as e_manual:
+                    print(f"手动生成PDP图也失败: {e_manual}")
+        
+        # 3. 生成2D PDP图（展示两个最重要特征之间的交互）
+        if len(valid_pdp_features) >= 2:
+            try:
+                feature1 = valid_pdp_features[0]
+                feature2 = valid_pdp_features[1]
+                
+                # 获取特征索引
+                feature1_idx = list(X_train.columns).index(feature1)
+                feature2_idx = list(X_train.columns).index(feature2)
+                
+                fig, ax = plt.subplots(figsize=(10, 8))
+                
+                # 尝试生成2D部分依赖图
+                try:
+                    pdp_display = PartialDependenceDisplay.from_estimator(
+                        best_model,
+                        X_train,
+                        [(feature1_idx, feature2_idx)],  # 2D PDP需要元组
+                        kind='average',
+                        grid_resolution=20,
+                        random_state=42,
+                        ax=ax
+                    )
+                    
+                    plt.title(f'特征 "{feature1}" 和 "{feature2}" 的2D部分依赖图')
+                    plt.tight_layout()
+                    
+                    # 保存2D PDP图
+                    pdp_2d_path = os.path.join(PLOTS_DIR, 'pdp_2d_top_features_v2.91.png')
+                    plt.savefig(pdp_2d_path)
+                    plt.close()
+                    print(f"2D PDP图已保存至: {pdp_2d_path}")
+                
+                except Exception as e_pdp_2d_api:
+                    print(f"使用API生成2D PDP图失败: {e_pdp_2d_api}")
+                    print("尝试手动生成简化版2D PDP图...")
+                    
+                    # 手动生成简化版2D PDP
+                    # 创建网格点
+                    f1_vals = np.linspace(X_train[feature1].min(), X_train[feature1].max(), 10)
+                    f2_vals = np.linspace(X_train[feature2].min(), X_train[feature2].max(), 10)
+                    f1_grid, f2_grid = np.meshgrid(f1_vals, f2_vals)
+                    
+                    # 创建预测网格
+                    pdp_result = np.zeros_like(f1_grid)
+                    
+                    # 计算部分依赖值
+                    for i in range(len(f1_vals)):
+                        for j in range(len(f2_vals)):
+                            X_temp = X_train.copy()
+                            X_temp[feature1] = f1_vals[i]
+                            X_temp[feature2] = f2_vals[j]
+                            
+                            # 为多分类，使用第一个类别的概率
+                            if hasattr(best_model, "predict_proba"):
+                                predictions = best_model.predict_proba(X_temp)[:, 0]
+                            else:
+                                predictions = best_model.predict(X_temp)
+                                
+                            pdp_result[j, i] = np.mean(predictions)
+                    
+                    # 绘制2D热图
+                    plt.figure(figsize=(10, 8))
+                    plt.contourf(f1_grid, f2_grid, pdp_result, cmap='viridis', levels=20)
+                    plt.colorbar(label='平均预测值')
+                    plt.xlabel(feature1)
+                    plt.ylabel(feature2)
+                    plt.title(f'特征 "{feature1}" 和 "{feature2}" 的手动2D部分依赖图')
+                    
+                    # 保存手动2D PDP图
+                    manual_pdp_2d_path = os.path.join(PLOTS_DIR, 'manual_pdp_2d_top_features_v2.91.png')
+                    plt.savefig(manual_pdp_2d_path)
+                    plt.close()
+                    print(f"手动生成的2D PDP图已保存至: {manual_pdp_2d_path}")
+                
+            except Exception as e_pdp_2d:
+                print(f"生成2D PDP图时出错: {e_pdp_2d}")
+                
+        # 4. PDP交互热图 - 显示不同特征对结果的交互影响
+        if len(valid_pdp_features) >= 3:
+            try:
+                # 选择前3个重要特征
+                top_three_features = valid_pdp_features[:3]
+                
+                # 计算每对特征之间的相关性作为交互强度的简化估计
+                X_top = X_train[top_three_features]
+                corr_matrix = X_top.corr().abs()
+                
+                plt.figure(figsize=(9, 7))
+                sns.heatmap(
+                    corr_matrix, 
+                    annot=True, 
+                    cmap='viridis', 
+                    vmin=0, 
+                    vmax=1,
+                    xticklabels=top_three_features,
+                    yticklabels=top_three_features
+                )
+                plt.title('特征交互热图 (基于相关性)')
+                plt.tight_layout()
+                
+                # 保存交互热图
+                interaction_path = os.path.join(PLOTS_DIR, 'feature_interaction_v2.91.png')
+                plt.savefig(interaction_path)
+                plt.close()
+                print(f"特征交互热图已保存至: {interaction_path}")
+                
+            except Exception as e_interact:
+                print(f"生成特征交互热图时出错: {e_interact}")
+    
+    else:
+        print("错误: 模型训练未完成或测试数据不可用，无法生成PIP和PDP图。")
+
+except ModuleNotFoundError as e:
+    print(f"错误: 缺少必要的库 - {e}")
+    print("请安装所需库: pip install scikit-learn matplotlib pandas seaborn")
+except Exception as e:
+    print(f"PIP和PDP分析过程中发生错误: {e}")
+    import traceback
+    traceback.print_exc()
+
+print("--- PIP和PDP分析完成 ---")

@@ -1,0 +1,10 @@
+{
+    "repeated_cv_mean": 0.5116363636363637,
+    "repeated_cv_std": 0.14111761696606775,
+    "learning_curve_final_gap": 0.5309090909090909,
+    "learning_curve_final_std": 0.1394914020277573,
+    "bootstrap_ci_width": 0.43377403846153834,
+    "bootstrap_mean": 0.4844352244493515,
+    "convergence_rating": "较差",
+    "timestamp": "2025-05-17 23:59:10"
+}
