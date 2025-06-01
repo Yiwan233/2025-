@@ -1,0 +1,35 @@
+{
+    "analysis_timestamp": "2025-06-01 22:24:38",
+    "data_summary": {
+        "problem1_samples": 51,
+        "problem1_features": 43
+    },
+    "problem1_results": {
+        "overall_accuracy": 0.8823529411764706,
+        "total_samples": 51,
+        "noc_distribution": {
+            "3": 16,
+            "2": 15,
+            "4": 11,
+            "5": 9
+        }
+    },
+    "problem2_results": {
+        "mx1_mean": 0.7324495678656893,
+        "mx2_mean": 0.26755043213431084,
+        "mx1_credible_interval": [
+            0.6705197943198555,
+            0.7897356949666183
+        ],
+        "mx2_credible_interval": [
+            0.21026430503338162,
+            0.3294802056801443
+        ],
+        "model_converged": true,
+        "acceptance_rate": 0.2577
+    },
+    "recommendations": [
+        "问题1的NoC识别模型表现良好，建议进一步优化特征工程",
+        "问题2的MCMC模型收敛良好，混合比例估计可信"
+    ]
+}
