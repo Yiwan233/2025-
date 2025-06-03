@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-法医混合STR图谱贡献者人数（NoC）智能识别模型
-基于文档思路的完整实现 - Gradient Boosting版本
+数学建模 - 法医DNA分析 - 问题1：贡献者人数识别 (Bootstrap数据扩增版)
 
-参考文档：法医混合STR图谱贡献者人数（NoC）智能识别模型研究
-核心思路：
-1. 精细化数据预处理与信号表征（简化Stutter处理）
-2. 基于文档V5方案的综合特征体系构建
-3. LassoCV特征选择
-4. Gradient Boosting模型训练与集成
-5. SHAP可解释性分析
+版本: V4.0 - Bootstrap Enhanced
+日期: 2025-06-03
+描述: 基于附件一真实数据，使用Bootstrap方法生成更多训练样本，提高模型性能
+主要改进:
+1. Bootstrap重采样生成更多训练数据
+2. 保持原有的高质量特征工程
+3. 多模型集成提高预测准确率
+4. 完整的模型评估和解释性分析
 """
 
 import pandas as pd
@@ -24,17 +24,17 @@ from scipy import stats
 from scipy.signal import find_peaks
 from collections import Counter
 from time import time
+import random
 
 # 机器学习相关
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, GridSearchCV
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier, VotingClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier, VotingClassifier, ExtraTreesClassifier
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.linear_model import LassoCV
 from sklearn.feature_selection import SelectFromModel
-plt.rcParams['font.sans-serif'] = ["Arial Unicode MS"]
-plt.rcParams['axes.unicode_minus'] = False
-warnings.filterwarnings('ignore')
+from sklearn.utils import resample
 
 # 可解释性分析
 try:
@@ -45,27 +45,31 @@ except ImportError:
     SHAP_AVAILABLE = False
 
 # 配置
+plt.rcParams['font.sans-serif'] = ["Arial Unicode MS", "SimHei"]
+plt.rcParams['axes.unicode_minus'] = False
 warnings.filterwarnings('ignore')
-plt.rcParams['figure.figsize'] = (12, 8)
-plt.rcParams['font.size'] = 10
 
-print("=== 法医混合STR图谱NoC智能识别模型 ===")
-print("基于Gradient Boosting的完整实现")
+print("=== 法医混合STR图谱NoC智能识别系统 (Bootstrap增强版) ===")
+print("基于附件一数据进行Bootstrap扩增的完整实现")
 
 # =====================
 # 1. 文件路径与基础设置
 # =====================
 DATA_DIR = './'
 file_path = os.path.join(DATA_DIR, '附件1：不同人数的STR图谱数据.csv')
-PLOTS_DIR = os.path.join(DATA_DIR, 'noc_analysis_plots')
+PLOTS_DIR = os.path.join(DATA_DIR, 'noc_bootstrap_plots')
 if not os.path.exists(PLOTS_DIR):
     os.makedirs(PLOTS_DIR)
 
-# 关键参数设置（基于文档）
-HEIGHT_THRESHOLD = 50  # 分析考虑阈值
-SATURATION_THRESHOLD = 30000  # 饱和阈值
-CTA_THRESHOLD = 0.5  # 真实等位基因置信度阈值
-PHR_IMBALANCE_THRESHOLD = 0.6  # 严重不平衡阈值
+# 关键参数设置
+HEIGHT_THRESHOLD = 50
+SATURATION_THRESHOLD = 30000
+CTA_THRESHOLD = 0.5
+PHR_IMBALANCE_THRESHOLD = 0.6
+
+# Bootstrap参数
+BOOTSTRAP_MULTIPLIER = 2  # 降低扩增倍数，避免过度拟合
+BOOTSTRAP_RANDOM_STATE = 42
 
 # =====================
 # 2. 辅助函数定义
@@ -104,7 +108,184 @@ def calculate_ols_slope(x, y):
         return 0.0
 
 # =====================
-# 3. 数据加载与预处理
+# 3. Bootstrap数据扩增类
+# =====================
+class STRBootstrapGenerator:
+    """STR数据Bootstrap生成器"""
+    
+    def __init__(self, original_data, multiplier=3, random_state=42):
+        """
+        初始化Bootstrap生成器
+        
+        Args:
+            original_data: 原始数据DataFrame
+            multiplier: 扩增倍数（建议2-5倍）
+            random_state: 随机种子
+        """
+        self.original_data = original_data
+        self.multiplier = multiplier
+        self.random_state = random_state
+        np.random.seed(random_state)
+        random.seed(random_state)
+        
+        print(f"Bootstrap生成器初始化 - 扩增倍数: {multiplier}x")
+        
+        # 验证数据格式
+        required_cols = ['Sample File', 'NoC_True', 'Marker']
+        missing_cols = [col for col in required_cols if col not in original_data.columns]
+        if missing_cols:
+            raise ValueError(f"原始数据缺少必要列: {missing_cols}")
+        
+        print(f"原始数据验证通过 - 形状: {original_data.shape}")
+        
+    def generate_bootstrap_samples(self):
+        """
+        生成Bootstrap扩增样本
+        
+        Returns:
+            bootstrap_data: 扩增后的数据
+        """
+        print("\n=== 开始Bootstrap数据扩增 ===")
+        
+        # 按NoC分组
+        grouped_by_noc = self.original_data.groupby('NoC_True')
+        all_bootstrap_samples = []
+        
+        for noc, group_data in grouped_by_noc:
+            print(f"\n处理NoC={noc}的样本 (原始数量: {len(group_data)})")
+            
+            # 计算需要生成的样本数
+            original_count = len(group_data)
+            target_count = original_count * self.multiplier
+            bootstrap_count = target_count - original_count
+            
+            print(f"目标样本数: {target_count}, 需要Bootstrap生成: {bootstrap_count}")
+            
+            # 添加原始样本
+            all_bootstrap_samples.append(group_data)
+            
+            # 生成Bootstrap样本
+            if bootstrap_count > 0:
+                bootstrap_samples = self._generate_noc_bootstrap_samples(
+                    group_data, bootstrap_count, noc)
+                all_bootstrap_samples.append(bootstrap_samples)
+                
+                print(f"✓ 成功生成 {len(bootstrap_samples)} 个Bootstrap样本")
+        
+        # 合并所有样本
+        bootstrap_data = pd.concat(all_bootstrap_samples, ignore_index=True)
+        
+        print(f"\n=== Bootstrap数据扩增完成 ===")
+        print(f"原始样本数: {len(self.original_data)}")
+        print(f"扩增后样本数: {len(bootstrap_data)}")
+        print(f"扩增倍数: {len(bootstrap_data) / len(self.original_data):.1f}x")
+        
+        # 显示各NoC的样本分布
+        print("\n各NoC类别的样本分布:")
+        noc_dist = bootstrap_data['NoC_True'].value_counts().sort_index()
+        for noc, count in noc_dist.items():
+            original_count = len(self.original_data[self.original_data['NoC_True'] == noc])
+            print(f"  {noc}人: {count} 样本 (原始: {original_count}, 增加: {count - original_count})")
+        
+        return bootstrap_data
+    
+    def _generate_noc_bootstrap_samples(self, noc_group_data, n_samples, noc):
+        """
+        为特定NoC生成Bootstrap样本
+        
+        Args:
+            noc_group_data: 该NoC的原始数据
+            n_samples: 需要生成的样本数
+            noc: NoC值
+            
+        Returns:
+            bootstrap_samples: Bootstrap样本
+        """
+        bootstrap_samples = []
+        
+        # 获取所有样本的基本信息
+        unique_samples = noc_group_data['Sample File'].unique()
+        
+        for i in range(n_samples):
+            # Bootstrap重采样：随机选择一个原始样本作为模板
+            template_sample = np.random.choice(unique_samples)
+            template_data = noc_group_data[noc_group_data['Sample File'] == template_sample]
+            
+            # 生成新的样本名称
+            new_sample_name = f"Bootstrap_{noc}P_{i+1:04d}_{template_sample}"
+            
+            # 创建新样本数据
+            new_sample_data = template_data.copy()
+            new_sample_data['Sample File'] = new_sample_name
+            
+            # 对峰高数据添加噪声（模拟实验变异）
+            new_sample_data = self._add_realistic_noise(new_sample_data)
+            
+            bootstrap_samples.append(new_sample_data)
+        
+        # 合并所有Bootstrap样本
+        if bootstrap_samples:
+            return pd.concat(bootstrap_samples, ignore_index=True)
+        else:
+            return pd.DataFrame()
+    
+    def _add_realistic_noise(self, sample_data):
+        """
+        为样本数据添加现实的噪声
+        
+        Args:
+            sample_data: 样本数据
+            
+        Returns:
+            noisy_data: 添加噪声后的数据
+        """
+        noisy_data = sample_data.copy()
+        
+        # 对Height列添加对数正态噪声（符合峰高的分布特性）
+        for i in range(1, 101):  # Height 1 到 Height 100
+            height_col = f'Height {i}'
+            if height_col in noisy_data.columns:
+                original_heights = noisy_data[height_col].values
+                
+                # 只对非零、非NaN的值添加噪声
+                mask = pd.notna(original_heights) & (original_heights > 0)
+                if mask.any():
+                    # 对数正态噪声，变异系数约为10-20%（更保守）
+                    noise_cv = np.random.uniform(0.10, 0.20)
+                    
+                    # 生成对数正态分布的乘性噪声
+                    sigma = np.sqrt(np.log(1 + noise_cv**2))
+                    noise_factor = np.random.lognormal(
+                        mean=-sigma**2/2,  # 调整均值使期望值为1
+                        sigma=sigma,
+                        size=len(original_heights)
+                    )
+                    
+                    noisy_heights = original_heights.copy().astype(float)
+                    noisy_heights[mask] = original_heights[mask] * noise_factor[mask]
+                    
+                    # 确保峰高在合理范围内
+                    noisy_heights[mask] = np.clip(
+                        noisy_heights[mask],
+                        original_heights[mask] * 0.7,  # 不小于原值的70%
+                        original_heights[mask] * 1.5   # 不大于原值的150%
+                    )
+                    
+                    # 四舍五入到整数（RFU值通常是整数）
+                    noisy_heights = np.round(noisy_heights).astype(int)
+                    
+                    # 应用饱和阈值
+                    noisy_heights = np.minimum(noisy_heights, SATURATION_THRESHOLD)
+                    
+                    # 确保不小于分析阈值
+                    noisy_heights[mask & (noisy_heights < HEIGHT_THRESHOLD)] = HEIGHT_THRESHOLD
+                    
+                    noisy_data[height_col] = noisy_heights
+        
+        return noisy_data
+
+# =====================
+# 4. 数据加载与预处理
 # =====================
 print("\n=== 步骤1: 数据加载与预处理 ===")
 
@@ -121,19 +302,39 @@ df['NoC_True'] = df['Sample File'].apply(extract_noc_from_filename)
 df = df.dropna(subset=['NoC_True'])
 df['NoC_True'] = df['NoC_True'].astype(int)
 
-print(f"NoC分布: {df['NoC_True'].value_counts().sort_index().to_dict()}")
-print(f"样本数: {df['Sample File'].nunique()}")
+print(f"原始数据NoC分布: {df['NoC_True'].value_counts().sort_index().to_dict()}")
+print(f"原始样本数: {df['Sample File'].nunique()}")
 
 # =====================
-# 4. 简化的峰处理与CTA评估
+# 5. Bootstrap数据扩增
 # =====================
-print("\n=== 步骤2: 峰处理与信号表征 ===")
+print("\n=== 步骤2: Bootstrap数据扩增 ===")
+
+# 创建Bootstrap生成器
+bootstrap_generator = STRBootstrapGenerator(
+    df, 
+    multiplier=BOOTSTRAP_MULTIPLIER, 
+    random_state=BOOTSTRAP_RANDOM_STATE
+)
+
+# 生成扩增数据
+df_bootstrap = bootstrap_generator.generate_bootstrap_samples()
+
+# 保存扩增后的数据
+bootstrap_data_path = os.path.join(DATA_DIR, 'bootstrap_enhanced_str_data.csv')
+try:
+    df_bootstrap.to_csv(bootstrap_data_path, index=False, encoding='utf-8-sig')
+    print(f"Bootstrap扩增数据已保存到: {bootstrap_data_path}")
+except Exception as e:
+    print(f"保存Bootstrap数据失败: {e}")
+
+# =====================
+# 6. 简化的峰处理
+# =====================
+print("\n=== 步骤3: 峰处理与信号表征 ===")
 
 def process_peaks_with_cta(sample_data):
-    """
-    简化的峰处理，包含基础CTA评估
-    基于文档3.1和3.2节的思路，但简化Stutter模型
-    """
+    """简化的峰处理，包含基础CTA评估"""
     processed_data = []
     
     for _, sample_row in sample_data.iterrows():
@@ -149,10 +350,8 @@ def process_peaks_with_cta(sample_data):
             
             if pd.notna(allele) and pd.notna(size) and pd.notna(height):
                 original_height = float(height)
-                # 饱和校正
                 corrected_height = min(original_height, SATURATION_THRESHOLD)
                 
-                # 分析考虑阈值过滤
                 if corrected_height >= HEIGHT_THRESHOLD:
                     peaks.append({
                         'allele': allele,
@@ -165,25 +364,21 @@ def process_peaks_with_cta(sample_data):
             continue
             
         # 简化的CTA评估
-        # 基于峰高相对大小进行简单的Stutter可能性评估
         peaks.sort(key=lambda x: x['height'], reverse=True)
         
         for peak in peaks:
-            # 简化的CTA计算：基于峰高在位点内的相对位置
             height_rank = peaks.index(peak) + 1
             total_peaks = len(peaks)
             
-            # 简单的启发式CTA评估
-            if height_rank == 1:  # 最高峰
+            if height_rank == 1:
                 cta = 0.95
-            elif height_rank == 2 and total_peaks >= 2:  # 第二高峰
+            elif height_rank == 2 and total_peaks >= 2:
                 height_ratio = peak['height'] / peaks[0]['height']
                 cta = 0.8 if height_ratio > 0.3 else 0.6
-            else:  # 其他峰
+            else:
                 height_ratio = peak['height'] / peaks[0]['height']
                 cta = max(0.1, min(0.8, height_ratio))
             
-            # 应用CTA阈值过滤
             if cta >= CTA_THRESHOLD:
                 processed_data.append({
                     'Sample File': sample_file,
@@ -197,25 +392,32 @@ def process_peaks_with_cta(sample_data):
     
     return pd.DataFrame(processed_data)
 
-# 处理所有样本
+# 处理所有样本（包括Bootstrap样本）
 all_processed_peaks = []
-for sample_file, group in df.groupby('Sample File'):
+unique_samples = df_bootstrap['Sample File'].nunique()
+processed_count = 0
+
+print(f"开始处理 {unique_samples} 个样本的峰数据...")
+
+for sample_file, group in df_bootstrap.groupby('Sample File'):
+    processed_count += 1
+    if processed_count % 50 == 0 or processed_count == unique_samples:
+        print(f"处理进度: {processed_count}/{unique_samples} ({processed_count/unique_samples*100:.1f}%)")
+    
     sample_peaks = process_peaks_with_cta(group)
-    all_processed_peaks.append(sample_peaks)
+    if not sample_peaks.empty:
+        all_processed_peaks.append(sample_peaks)
 
 df_peaks = pd.concat(all_processed_peaks, ignore_index=True) if all_processed_peaks else pd.DataFrame()
 print(f"处理后的峰数据形状: {df_peaks.shape}")
 
 # =====================
-# 5. 综合特征工程（基于文档V5方案）
+# 7. 综合特征工程
 # =====================
-print("\n=== 步骤3: 综合特征工程 ===")
+print("\n=== 步骤4: 综合特征工程 ===")
 
 def extract_comprehensive_features_v5(sample_file, sample_peaks):
-    """
-    基于文档第4节的综合特征体系构建
-    实现A、B、C、D类特征
-    """
+    """基于文档第4节的综合特征体系构建"""
     if sample_peaks.empty:
         return {}
     
@@ -231,22 +433,13 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
     alleles_per_locus = locus_groups['Allele'].nunique()
     locus_heights = locus_groups['Height'].sum()
     
-    # 预期常染色体位点数（假设值，实际应从MARKER_PARAMS获取）
-    expected_autosomal_count = 23  # 可根据实际试剂盒调整
+    expected_autosomal_count = 23
     
-    # ===============================
     # A类：谱图层面基础统计特征
-    # ===============================
-    
-    # A.1 MACP - 样本最大等位基因数
     features['mac_profile'] = alleles_per_locus.max() if len(alleles_per_locus) > 0 else 0
-    
-    # A.2 TDA - 样本总特异等位基因数
     features['total_distinct_alleles'] = sample_peaks['Allele'].nunique()
     
-    # A.3 AAP - 每位点平均等位基因数
     if expected_autosomal_count > 0:
-        # 包含缺失位点（计为0）
         all_locus_counts = np.zeros(expected_autosomal_count)
         all_locus_counts[:len(alleles_per_locus)] = alleles_per_locus.values
         features['avg_alleles_per_locus'] = np.mean(all_locus_counts)
@@ -255,32 +448,28 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
         features['avg_alleles_per_locus'] = alleles_per_locus.mean() if len(alleles_per_locus) > 0 else 0
         features['std_alleles_per_locus'] = alleles_per_locus.std() if len(alleles_per_locus) > 1 else 0
     
-    # A.5 MGTN系列 - 等位基因数≥N的位点数
+    # MGTN系列
     for N in [2, 3, 4, 5, 6]:
         features[f'loci_gt{N}_alleles'] = (alleles_per_locus >= N).sum()
     
-    # A.6 等位基因计数的熵
+    # 等位基因计数的熵
     if len(alleles_per_locus) > 0:
         counts = alleles_per_locus.value_counts(normalize=True)
         features['allele_count_dist_entropy'] = calculate_entropy(counts.values)
     else:
         features['allele_count_dist_entropy'] = 0
     
-    # ===============================
     # B类：峰高、平衡性及随机效应特征
-    # ===============================
-    
     if total_peaks > 0:
-        # B.1 基础峰高统计
         features['avg_peak_height'] = np.mean(all_heights)
         features['std_peak_height'] = np.std(all_heights) if total_peaks > 1 else 0
         features['min_peak_height'] = np.min(all_heights)
         features['max_peak_height'] = np.max(all_heights)
         
-        # B.2 峰高比(PHR)相关统计
+        # 峰高比(PHR)相关统计
         phr_values = []
         for marker, marker_group in locus_groups:
-            if len(marker_group) == 2:  # 恰好两个等位基因的位点
+            if len(marker_group) == 2:
                 heights = marker_group['Height'].values
                 phr = min(heights) / max(heights) if max(heights) > 0 else 0
                 phr_values.append(phr)
@@ -298,7 +487,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
                        'num_severe_imbalance_loci', 'ratio_severe_imbalance_loci']:
                 features[key] = 0
         
-        # B.3 峰高分布统计矩
+        # 峰高分布统计矩
         if total_peaks > 2:
             features['skewness_peak_height'] = stats.skew(all_heights)
             features['kurtosis_peak_height'] = stats.kurtosis(all_heights, fisher=False)
@@ -306,7 +495,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
             features['skewness_peak_height'] = 0
             features['kurtosis_peak_height'] = 0
         
-        # B.3+ 峰高多峰性
+        # 峰高多峰性
         try:
             log_heights = np.log(all_heights + 1)
             if len(np.unique(log_heights)) > 1:
@@ -318,12 +507,11 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
         except:
             features['modality_peak_height'] = 1
         
-        # B.4 饱和效应
+        # 饱和效应
         saturated_peaks = (sample_peaks['Original_Height'] >= SATURATION_THRESHOLD).sum()
         features['num_saturated_peaks'] = saturated_peaks
         features['ratio_saturated_peaks'] = saturated_peaks / total_peaks
     else:
-        # 空值填充
         for key in ['avg_peak_height', 'std_peak_height', 'min_peak_height', 'max_peak_height',
                    'avg_phr', 'std_phr', 'min_phr', 'median_phr', 'num_loci_with_phr',
                    'num_severe_imbalance_loci', 'ratio_severe_imbalance_loci',
@@ -331,11 +519,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
                    'num_saturated_peaks', 'ratio_saturated_peaks']:
             features[key] = 0
     
-    # ===============================
     # C类：信息论及谱图复杂度特征
-    # ===============================
-    
-    # C.1 位点间平衡性的香农熵
     if len(locus_heights) > 0:
         total_height = locus_heights.sum()
         if total_height > 0:
@@ -346,7 +530,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
     else:
         features['inter_locus_balance_entropy'] = 0
     
-    # C.2 平均位点等位基因分布熵
+    # 平均位点等位基因分布熵
     locus_entropies = []
     for marker, marker_group in locus_groups:
         if len(marker_group) > 1:
@@ -359,7 +543,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
     
     features['avg_locus_allele_entropy'] = np.mean(locus_entropies) if locus_entropies else 0
     
-    # C.3 样本整体峰高分布熵
+    # 样本整体峰高分布熵
     if total_peaks > 0:
         log_heights = np.log(all_heights + 1)
         hist, _ = np.histogram(log_heights, bins=min(15, total_peaks))
@@ -369,35 +553,27 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
     else:
         features['peak_height_entropy'] = 0
     
-    # C.4 图谱完整性指标
+    # 图谱完整性指标
     effective_loci_count = len(locus_groups)
     features['num_loci_with_effective_alleles'] = effective_loci_count
     features['num_loci_no_effective_alleles'] = max(0, expected_autosomal_count - effective_loci_count)
     
-    # ===============================
     # D类：DNA降解与信息丢失特征
-    # ===============================
-    
     if total_peaks > 1:
-        # D.1 峰高与片段大小的相关性
         if len(np.unique(all_heights)) > 1 and len(np.unique(all_sizes)) > 1:
             features['height_size_correlation'] = np.corrcoef(all_heights, all_sizes)[0, 1]
         else:
             features['height_size_correlation'] = 0
         
-        # D.2 峰高与片段大小的线性回归斜率
         features['height_size_slope'] = calculate_ols_slope(all_sizes, all_heights)
         
-        # D.3 加权回归斜率（权重为峰高）
         try:
-            # 简化版加权回归
             weights = all_heights / all_heights.sum()
             weighted_correlation = np.average(all_sizes, weights=weights)
             features['weighted_height_size_slope'] = calculate_ols_slope(all_sizes, all_heights)
         except:
             features['weighted_height_size_slope'] = 0
         
-        # D.4 PHR随片段大小变化的斜率
         if len(phr_values) > 1:
             phr_sizes = []
             for marker, marker_group in locus_groups:
@@ -416,11 +592,10 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
         for key in ['height_size_correlation', 'height_size_slope', 'weighted_height_size_slope', 'phr_size_slope']:
             features[key] = 0
     
-    # D.5 位点丢失评分（简化版）
+    # 其他降解相关特征
     dropout_score = features['num_loci_no_effective_alleles'] / expected_autosomal_count if expected_autosomal_count > 0 else 0
     features['locus_dropout_score_weighted_by_size'] = dropout_score
     
-    # D.6 RFU每碱基对衰减指数（简化版）
     if len(locus_groups) > 1:
         locus_max_heights = []
         locus_avg_sizes = []
@@ -434,8 +609,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
     else:
         features['degradation_index_rfu_per_bp'] = 0
     
-    # D.7 小片段与大片段信息完整度比率（简化版）
-    # 假设片段大小<200bp为小片段，>=200bp为大片段
+    # 简化的信息完整度比率
     small_fragment_loci = 0
     large_fragment_loci = 0
     small_fragment_effective = 0
@@ -450,8 +624,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
             large_fragment_loci += 1
             large_fragment_effective += 1
     
-    # 估算总的小/大片段位点数
-    total_small_expected = expected_autosomal_count // 2  # 假设一半是小片段
+    total_small_expected = expected_autosomal_count // 2
     total_large_expected = expected_autosomal_count - total_small_expected
     
     small_completeness = small_fragment_effective / total_small_expected if total_small_expected > 0 else 0
@@ -460,7 +633,7 @@ def extract_comprehensive_features_v5(sample_file, sample_peaks):
     if large_completeness > 0:
         features['info_completeness_ratio_small_large'] = small_completeness / large_completeness
     else:
-        features['info_completeness_ratio_small_large'] = small_completeness / 0.001  # 避免除零
+        features['info_completeness_ratio_small_large'] = small_completeness / 0.001
     
     return features
 
@@ -469,75 +642,91 @@ print("开始特征提取...")
 start_time = time()
 
 all_features = []
-for sample_file, group in df_peaks.groupby('Sample File'):
-    features = extract_comprehensive_features_v5(sample_file, group)
-    all_features.append(features)
+unique_samples = df_peaks['Sample File'].nunique() if not df_peaks.empty else 0
+processed_count = 0
+
+if df_peaks.empty:
+    print("警告: 处理后的峰数据为空，使用原始数据进行特征提取")
+    # 如果峰处理失败，回退到使用原始数据
+    for sample_file in df_bootstrap['Sample File'].unique():
+        features = {'Sample File': sample_file}
+        # 添加默认特征值
+        for feature_name in ['mac_profile', 'total_distinct_alleles', 'avg_alleles_per_locus']:
+            features[feature_name] = 0
+        all_features.append(features)
+else:
+    for sample_file, group in df_peaks.groupby('Sample File'):
+        processed_count += 1
+        if processed_count % 100 == 0 or processed_count == unique_samples:
+            print(f"特征提取进度: {processed_count}/{unique_samples} ({processed_count/unique_samples*100:.1f}%)")
+        
+        features = extract_comprehensive_features_v5(sample_file, group)
+        if features:  # 确保特征不为空
+            all_features.append(features)
+
+if not all_features:
+    print("错误: 无法提取特征，请检查数据格式")
+    exit()
 
 df_features = pd.DataFrame(all_features)
 
 # 合并NoC标签
-noc_map = df.groupby('Sample File')['NoC_True'].first().to_dict()
+noc_map = df_bootstrap.groupby('Sample File')['NoC_True'].first().to_dict()
 df_features['NoC_True'] = df_features['Sample File'].map(noc_map)
 df_features = df_features.dropna(subset=['NoC_True'])
 
+# 验证数据质量
+if df_features.empty:
+    print("错误: 特征数据为空，请检查数据处理流程")
+    exit()
+
+# 填充缺失值
+numeric_cols = df_features.select_dtypes(include=[np.number]).columns
+df_features[numeric_cols] = df_features[numeric_cols].fillna(0)
+
 print(f"特征提取完成，耗时: {time() - start_time:.2f}秒")
 print(f"特征数据形状: {df_features.shape}")
-print(f"特征数量: {len([col for col in df_features.columns if col not in ['Sample File', 'NoC_True']])}")
+
+# 检查特征数量
+feature_cols_check = [col for col in df_features.columns if col not in ['Sample File', 'NoC_True']]
+print(f"实际特征数量: {len(feature_cols_check)}")
+
+if len(feature_cols_check) == 0:
+    print("错误: 没有可用的特征，请检查特征提取函数")
+    exit()
 
 # =====================
-# 6. 特征选择（LassoCV）
+# 8. 特征选择与模型训练
 # =====================
-print("\n=== 步骤4: 特征选择 ===")
+print("\n=== 步骤5: 模型训练与验证 ===")
 
-# 准备数据
+# 准备特征和标签
 feature_cols = [col for col in df_features.columns if col not in ['Sample File', 'NoC_True']]
-X = df_features[feature_cols].fillna(0)
+X = df_features[feature_cols]
 y = df_features['NoC_True']
 
-print(f"原始特征数: {len(feature_cols)}")
-print(f"样本数: {len(X)}")
-print(f"NoC分布: {y.value_counts().sort_index().to_dict()}")
+print(f"原始特征数量: {len(feature_cols)}")
 
-# 标签编码（为了兼容性）
+# 标准化特征
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# 编码标签
 label_encoder = LabelEncoder()
 y_encoded = label_encoder.fit_transform(y)
 
-# 特征标准化
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-X_scaled_df = pd.DataFrame(X_scaled, columns=feature_cols)
-
-# LassoCV特征选择
-print("使用LassoCV进行特征选择...")
-lasso_cv = LassoCV(cv=5, random_state=42, max_iter=2000)
+# 使用LassoCV进行特征选择
+print("执行Lasso特征选择...")
+lasso_cv = LassoCV(cv=5, random_state=42, max_iter=1000)
 lasso_cv.fit(X_scaled, y_encoded)
 
-# 选择非零系数的特征
+# 基于Lasso系数选择特征
 selector = SelectFromModel(lasso_cv, prefit=True)
 X_selected = selector.transform(X_scaled)
-selected_features = [feature_cols[i] for i in range(len(feature_cols)) if selector.get_support()[i]]
+selected_features = [feature_cols[i] for i in selector.get_support(indices=True)]
 
-print(f"LassoCV选择的特征数: {len(selected_features)}")
-print("选择的特征:")
-for i, feature in enumerate(selected_features, 1):
-    coef = lasso_cv.coef_[feature_cols.index(feature)]
-    print(f"  {i:2d}. {feature:35} (系数: {coef:8.4f})")
-
-# 如果选择的特征太少，保留重要特征
-if len(selected_features) < 5:
-    print("警告: LassoCV选择的特征太少，使用基于重要性的备选方案...")
-    # 基于绝对系数值选择前15个特征
-    feature_importance = [(i, abs(coef)) for i, coef in enumerate(lasso_cv.coef_)]
-    feature_importance.sort(key=lambda x: x[1], reverse=True)
-    selected_indices = [x[0] for x in feature_importance[:15]]
-    selected_features = [feature_cols[i] for i in selected_indices]
-    X_selected = X_scaled[:, selected_indices]
-    print(f"备选方案选择了 {len(selected_features)} 个特征")
-
-# =====================
-# 7. 模型训练与验证
-# =====================
-print("\n=== 步骤5: 模型训练与验证 ===")
+print(f"Lasso选择的特征数量: {len(selected_features)}")
+print(f"特征选择比例: {len(selected_features)/len(feature_cols):.2%}")
 
 # 使用选择的特征
 X_final = pd.DataFrame(X_selected, columns=selected_features)
@@ -556,9 +745,9 @@ print("\n训练Gradient Boosting模型...")
 # 超参数网格
 gb_param_grid = {
     'n_estimators': [100, 200, 300],
-    'max_depth': [3, 5, 7],
-    'learning_rate': [0.01, 0.1, 0.2],
-    'subsample': [0.8, 0.9, 1.0],
+    'max_depth': [3, 5, 9],
+    'learning_rate': [0.1, 0.5, 0.01],
+    'subsample': [ 0.8, 0.9],
     'min_samples_split': [2, 5, 10],
     'min_samples_leaf': [1, 2, 4]
 }
