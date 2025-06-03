@@ -1,0 +1,48 @@
+{
+  "best_model": "Gradient Boosting",
+  "best_test_accuracy": 0.6875,
+  "all_results": {
+    "Random Forest": {
+      "cv_mean": 0.3672727272727273,
+      "test_acc": 0.4375
+    },
+    "Gradient Boosting": {
+      "cv_mean": 0.5254545454545454,
+      "test_acc": 0.6875
+    },
+    "Extra Trees": {
+      "cv_mean": 0.3709090909090909,
+      "test_acc": 0.5
+    },
+    "SVM": {
+      "cv_mean": 0.3690909090909091,
+      "test_acc": 0.3125
+    },
+    "Logistic Regression": {
+      "cv_mean": 0.38909090909090904,
+      "test_acc": 0.5
+    },
+    "Neural Network": {
+      "cv_mean": 0.38909090909090904,
+      "test_acc": 0.5
+    },
+    "Naive Bayes": {
+      "cv_mean": 0.39454545454545453,
+      "test_acc": 0.3125
+    },
+    "Decision Tree": {
+      "cv_mean": 0.40909090909090906,
+      "test_acc": 0.5
+    },
+    "XGBoost": {
+      "cv_mean": 0.5654545454545454,
+      "test_acc": 0.5
+    },
+    "Ensemble": {
+      "cv_mean": 0.5054545454545455,
+      "test_acc": 0.625
+    }
+  },
+  "feature_count": 41,
+  "sample_count": 51
+}

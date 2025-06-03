@@ -1,0 +1,57 @@
+{
+  "model_info": {
+    "best_model": "Gradient Boosting",
+    "best_accuracy": 0.4375,
+    "overall_accuracy": 0.8235294117647058,
+    "feature_selection_method": "LassoCV",
+    "selected_features_count": 9
+  },
+  "data_info": {
+    "total_samples": 51,
+    "feature_count_original": 38,
+    "feature_count_selected": 9,
+    "noc_distribution": {
+      "2": 15,
+      "3": 16,
+      "4": 11,
+      "5": 9
+    }
+  },
+  "model_performance": {
+    "Gradient Boosting": {
+      "accuracy": 0.4375
+    },
+    "Random Forest": {
+      "accuracy": 0.3125
+    },
+    "Ensemble": {
+      "accuracy": 0.4375
+    }
+  },
+  "noc_class_accuracy": {
+    "2": 0.9333333333333333,
+    "3": 0.875,
+    "4": 0.7272727272727273,
+    "5": 0.6666666666666666
+  },
+  "selected_features": [
+    "mac_profile",
+    "max_peak_height",
+    "ratio_severe_imbalance_loci",
+    "skewness_peak_height",
+    "kurtosis_peak_height",
+    "peak_height_entropy",
+    "height_size_correlation",
+    "height_size_slope",
+    "info_completeness_ratio_small_large"
+  ],
+  "hyperparameters": {
+    "learning_rate": 0.1,
+    "max_depth": 5,
+    "min_samples_leaf": 1,
+    "min_samples_split": 5,
+    "n_estimators": 100,
+    "subsample": 0.8
+  },
+  "timestamp": "2025-06-03 21:12:19"
+}
