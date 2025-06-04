@@ -1,0 +1,670 @@
+{
+  "analysis_metadata": {
+    "version": "4.0",
+    "timestamp": "2025-06-04 22:34:51",
+    "best_model": "Gradient Boosting",
+    "best_test_accuracy": 0.6875,
+    "feature_count": 41,
+    "sample_count": 51,
+    "noc_distribution": {
+      "2": 15,
+      "3": 16,
+      "4": 11,
+      "5": 9
+    }
+  },
+  "supervised_learning_results": {
+    "Random Forest": {
+      "cv_mean": 0.3672727272727273,
+      "cv_std": 0.17350066091759703,
+      "test_acc": 0.4375,
+      "precision_per_class": [
+        0.5,
+        0.625,
+        0.0,
+        0.3333333333333333
+      ],
+      "recall_per_class": [
+        0.2,
+        1.0,
+        0.0,
+        0.3333333333333333
+      ],
+      "f1_per_class": [
+        0.28571428571428575,
+        0.7692307692307693,
+        0.0,
+        0.3333333333333333
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "Gradient Boosting": {
+      "cv_mean": 0.5254545454545454,
+      "cv_std": 0.15389166523271874,
+      "test_acc": 0.6875,
+      "precision_per_class": [
+        0.6,
+        1.0,
+        0.5,
+        0.6
+      ],
+      "recall_per_class": [
+        0.6,
+        0.8,
+        0.3333333333333333,
+        1.0
+      ],
+      "f1_per_class": [
+        0.6,
+        0.888888888888889,
+        0.4,
+        0.7499999999999999
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "Extra Trees": {
+      "cv_mean": 0.3709090909090909,
+      "cv_std": 0.10839169862391912,
+      "test_acc": 0.5,
+      "precision_per_class": [
+        0.5,
+        1.0,
+        0.0,
+        0.5
+      ],
+      "recall_per_class": [
+        0.6,
+        0.6,
+        0.0,
+        0.6666666666666666
+      ],
+      "f1_per_class": [
+        0.5454545454545454,
+        0.7499999999999999,
+        0.0,
+        0.5714285714285715
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "SVM": {
+      "cv_mean": 0.3690909090909091,
+      "cv_std": 0.13143832415947504,
+      "test_acc": 0.3125,
+      "precision_per_class": [
+        0.5,
+        0.0,
+        0.16666666666666666,
+        0.5
+      ],
+      "recall_per_class": [
+        0.4,
+        0.0,
+        0.3333333333333333,
+        0.6666666666666666
+      ],
+      "f1_per_class": [
+        0.4444444444444445,
+        0.0,
+        0.2222222222222222,
+        0.5714285714285715
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "Logistic Regression": {
+      "cv_mean": 0.38909090909090904,
+      "cv_std": 0.11005633418488403,
+      "test_acc": 0.5,
+      "precision_per_class": [
+        0.5,
+        0.5,
+        0.2,
+        1.0
+      ],
+      "recall_per_class": [
+        0.4,
+        0.4,
+        0.3333333333333333,
+        1.0
+      ],
+      "f1_per_class": [
+        0.4444444444444445,
+        0.4444444444444445,
+        0.25,
+        1.0
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "Neural Network": {
+      "cv_mean": 0.38909090909090904,
+      "cv_std": 0.12693461582332408,
+      "test_acc": 0.5,
+      "precision_per_class": [
+        0.6666666666666666,
+        0.4,
+        0.2,
+        1.0
+      ],
+      "recall_per_class": [
+        0.4,
+        0.4,
+        0.3333333333333333,
+        1.0
+      ],
+      "f1_per_class": [
+        0.5,
+        0.4000000000000001,
+        0.25,
+        1.0
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "Naive Bayes": {
+      "cv_mean": 0.39454545454545453,
+      "cv_std": 0.09596831433015744,
+      "test_acc": 0.3125,
+      "precision_per_class": [
+        0.5,
+        0.0,
+        0.0,
+        0.5
+      ],
+      "recall_per_class": [
+        0.6,
+        0.0,
+        0.0,
+        0.6666666666666666
+      ],
+      "f1_per_class": [
+        0.5454545454545454,
+        0.0,
+        0.0,
+        0.5714285714285715
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "Decision Tree": {
+      "cv_mean": 0.40909090909090906,
+      "cv_std": 0.14882459585222635,
+      "test_acc": 0.5,
+      "precision_per_class": [
+        0.5,
+        1.0,
+        0.0,
+        0.5
+      ],
+      "recall_per_class": [
+        0.6,
+        0.4,
+        0.0,
+        1.0
+      ],
+      "f1_per_class": [
+        0.5454545454545454,
+        0.5714285714285715,
+        0.0,
+        0.6666666666666666
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    },
+    "XGBoost": {
+      "cv_mean": 0.5654545454545454,
+      "cv_std": 0.1097555510748114,
+      "test_acc": 0.5,
+      "precision_per_class": [
+        0.5,
+        0.75,
+        0.0,
+        0.5
+      ],
+      "recall_per_class": [
+        0.6,
+        0.6,
+        0.0,
+        0.6666666666666666
+      ],
+      "f1_per_class": [
+        0.5454545454545454,
+        0.6666666666666665,
+        0.0,
+        0.5714285714285715
+      ],
+      "support_per_class": [
+        5,
+        5,
+        3,
+        3
+      ]
+    }
+  },
+  "unsupervised_learning_results": {
+    "K-Means": {
+      "n_clusters_found": 4,
+      "ari": 0.047681686639874446,
+      "nmi": 0.13137714786758842,
+      "homogeneity": 0.12418073686864937,
+      "completeness": 0.13945894809932655,
+      "v_measure": 0.13137714786758842,
+      "silhouette": 0.2775314795997549
+    },
+    "Gaussian Mixture": {
+      "n_clusters_found": 4,
+      "ari": 0.04249229007774556,
+      "nmi": 0.12755342784508972,
+      "homogeneity": 0.12147078506391355,
+      "completeness": 0.13427735910654554,
+      "v_measure": 0.12755342784508972,
+      "silhouette": 0.27594710152292157
+    },
+    "Agglomerative": {
+      "n_clusters_found": 4,
+      "ari": 0.04410263287019118,
+      "nmi": 0.13098953478028472,
+      "homogeneity": 0.12422917362383991,
+      "completeness": 0.13852801707383142,
+      "v_measure": 0.13098953478028474,
+      "silhouette": 0.27811048567156854
+    },
+    "Spectral Clustering": {
+      "n_clusters_found": 4,
+      "ari": 0.035726205044260446,
+      "nmi": 0.15314738644971318,
+      "homogeneity": 0.10044661598630938,
+      "completeness": 0.3221879631106619,
+      "v_measure": 0.1531473864497132,
+      "silhouette": 0.21155260185962313
+    }
+  },
+  "detailed_classification_reports": {
+    "Random Forest": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.2,
+        "f1-score": 0.28571428571428575,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 0.625,
+        "recall": 1.0,
+        "f1-score": 0.7692307692307693,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.3333333333333333,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.3333333333333333,
+        "support": 3.0
+      },
+      "accuracy": 0.4375,
+      "macro avg": {
+        "precision": 0.3645833333333333,
+        "recall": 0.3833333333333333,
+        "f1-score": 0.34706959706959706,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.4140625,
+        "recall": 0.4375,
+        "f1-score": 0.3921703296703297,
+        "support": 16.0
+      }
+    },
+    "Gradient Boosting": {
+      "2人": {
+        "precision": 0.6,
+        "recall": 0.6,
+        "f1-score": 0.6,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1-score": 0.888888888888889,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.5,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.4,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.6,
+        "recall": 1.0,
+        "f1-score": 0.7499999999999999,
+        "support": 3.0
+      },
+      "accuracy": 0.6875,
+      "macro avg": {
+        "precision": 0.675,
+        "recall": 0.6833333333333333,
+        "f1-score": 0.6597222222222222,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.70625,
+        "recall": 0.6875,
+        "f1-score": 0.6809027777777779,
+        "support": 16.0
+      }
+    },
+    "Extra Trees": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1-score": 0.5454545454545454,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1-score": 0.7499999999999999,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.5,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.5714285714285715,
+        "support": 3.0
+      },
+      "accuracy": 0.5,
+      "macro avg": {
+        "precision": 0.5,
+        "recall": 0.4666666666666667,
+        "f1-score": 0.46672077922077926,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.5625,
+        "recall": 0.5,
+        "f1-score": 0.5119724025974026,
+        "support": 16.0
+      }
+    },
+    "SVM": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.4,
+        "f1-score": 0.4444444444444445,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.16666666666666666,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.2222222222222222,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.5,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.5714285714285715,
+        "support": 3.0
+      },
+      "accuracy": 0.3125,
+      "macro avg": {
+        "precision": 0.29166666666666663,
+        "recall": 0.35,
+        "f1-score": 0.30952380952380953,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.28125,
+        "recall": 0.3125,
+        "f1-score": 0.2876984126984127,
+        "support": 16.0
+      }
+    },
+    "Logistic Regression": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.4,
+        "f1-score": 0.4444444444444445,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 0.5,
+        "recall": 0.4,
+        "f1-score": 0.4444444444444445,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.2,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.25,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 3.0
+      },
+      "accuracy": 0.5,
+      "macro avg": {
+        "precision": 0.55,
+        "recall": 0.5333333333333333,
+        "f1-score": 0.5347222222222222,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.5375,
+        "recall": 0.5,
+        "f1-score": 0.5121527777777778,
+        "support": 16.0
+      }
+    },
+    "Neural Network": {
+      "2人": {
+        "precision": 0.6666666666666666,
+        "recall": 0.4,
+        "f1-score": 0.5,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 0.4,
+        "recall": 0.4,
+        "f1-score": 0.4000000000000001,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.2,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.25,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 3.0
+      },
+      "accuracy": 0.5,
+      "macro avg": {
+        "precision": 0.5666666666666667,
+        "recall": 0.5333333333333333,
+        "f1-score": 0.5375000000000001,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.5583333333333333,
+        "recall": 0.5,
+        "f1-score": 0.515625,
+        "support": 16.0
+      }
+    },
+    "Naive Bayes": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1-score": 0.5454545454545454,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.5,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.5714285714285715,
+        "support": 3.0
+      },
+      "accuracy": 0.3125,
+      "macro avg": {
+        "precision": 0.25,
+        "recall": 0.31666666666666665,
+        "f1-score": 0.27922077922077926,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.25,
+        "recall": 0.3125,
+        "f1-score": 0.2775974025974026,
+        "support": 16.0
+      }
+    },
+    "Decision Tree": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1-score": 0.5454545454545454,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 1.0,
+        "recall": 0.4,
+        "f1-score": 0.5714285714285715,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1-score": 0.6666666666666666,
+        "support": 3.0
+      },
+      "accuracy": 0.5,
+      "macro avg": {
+        "precision": 0.5,
+        "recall": 0.5,
+        "f1-score": 0.4458874458874459,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.5625,
+        "recall": 0.5,
+        "f1-score": 0.474025974025974,
+        "support": 16.0
+      }
+    },
+    "XGBoost": {
+      "2人": {
+        "precision": 0.5,
+        "recall": 0.6,
+        "f1-score": 0.5454545454545454,
+        "support": 5.0
+      },
+      "3人": {
+        "precision": 0.75,
+        "recall": 0.6,
+        "f1-score": 0.6666666666666665,
+        "support": 5.0
+      },
+      "4人": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 3.0
+      },
+      "5人": {
+        "precision": 0.5,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.5714285714285715,
+        "support": 3.0
+      },
+      "accuracy": 0.5,
+      "macro avg": {
+        "precision": 0.4375,
+        "recall": 0.4666666666666667,
+        "f1-score": 0.4458874458874459,
+        "support": 16.0
+      },
+      "weighted avg": {
+        "precision": 0.484375,
+        "recall": 0.5,
+        "f1-score": 0.4859307359307359,
+        "support": 16.0
+      }
+    }
+  }
+}
