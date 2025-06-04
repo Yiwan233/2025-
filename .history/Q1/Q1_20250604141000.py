@@ -720,7 +720,7 @@ y_encoded = label_encoder.fit_transform(y)
 # =====================
 # 6. 特征选择（RFECV替代LassoCV）
 # =====================
-print("\n=== 步骤6: 特征选择（使用RFECV）===")
+print("\n=== 步骤4: 特征选择（使用RFECV）===")
 
 # 准备数据
 feature_cols = [col for col in df_features.columns if col not in ['Sample File', 'NoC_True']]

@@ -717,86 +717,18 @@ X_scaled = scaler.fit_transform(X)
 label_encoder = LabelEncoder()
 y_encoded = label_encoder.fit_transform(y)
 
-# =====================
-# 6. 特征选择（RFECV替代LassoCV）
-# =====================
-print("\n=== 步骤6: 特征选择（使用RFECV）===")
+# 使用LassoCV进行特征选择
+print("执行Lasso特征选择...")
+lasso_cv = LassoCV(cv=5, random_state=42, max_iter=1000)
+lasso_cv.fit(X_scaled, y_encoded)
 
-# 准备数据
-feature_cols = [col for col in df_features.columns if col not in ['Sample File', 'NoC_True']]
-X = df_features[feature_cols].fillna(0)
-y = df_features['NoC_True']
+# 基于Lasso系数选择特征
+selector = SelectFromModel(lasso_cv, prefit=True)
+X_selected = selector.transform(X_scaled)
+selected_features = [feature_cols[i] for i in selector.get_support(indices=True)]
 
-print(f"原始特征数: {len(feature_cols)}")
-print(f"样本数: {len(X)}")
-print(f"NoC分布: {y.value_counts().sort_index().to_dict()}")
-
-# 标签编码（为了兼容性）
-label_encoder = LabelEncoder()
-y_encoded = label_encoder.fit_transform(y)
-
-# 特征标准化
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-X_scaled_df = pd.DataFrame(X_scaled, columns=feature_cols)
-
-# RFECV特征选择
-print("使用RFECV进行特征选择...")
-# 使用梯度提升作为基础估计器
-from sklearn.ensemble import GradientBoostingClassifier
-base_estimator = GradientBoostingClassifier(n_estimators=50, random_state=42)
-
-# 配置RFECV
-rfecv = RFECV(
-    estimator=base_estimator,
-    step=1,  # 每次删除1个特征
-    cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
-    scoring='accuracy',
-    min_features_to_select=5,  # 至少保留5个特征
-    n_jobs=-1
-)
-
-# 执行RFECV
-rfecv.fit(X_scaled, y_encoded)
-
-# 获取选择的特征
-selected_features = [feature_cols[i] for i in range(len(feature_cols)) if rfecv.support_[i]]
-X_selected = X_scaled[:, rfecv.support_]
-
-print(f"RFECV选择的特征数: {len(selected_features)}")
-print(f"最优特征数（交叉验证得分最高）: {rfecv.n_features_}")
-
-# 显示特征重要性排名
-feature_ranking = rfecv.ranking_
-feature_importance_df = pd.DataFrame({
-    'feature': feature_cols,
-    'ranking': feature_ranking,
-    'selected': rfecv.support_
-}).sort_values('ranking')
-
-print("\nRFECV特征选择结果（前20个）:")
-for i, row in feature_importance_df.head(20).iterrows():
-    status = "✓" if row['selected'] else "✗"
-    print(f"  {status} {row['ranking']:2d}. {row['feature']:35}")
-
-# 绘制RFECV结果
-plt.figure(figsize=(12, 8))
-plt.plot(range(1, len(rfecv.cv_results_['mean_test_score']) + 1), 
-         rfecv.cv_results_['mean_test_score'], 'o-')
-plt.xlabel('特征数量')
-plt.ylabel('交叉验证准确率')
-plt.title('RFECV特征选择过程')
-plt.axvline(x=rfecv.n_features_, color='red', linestyle='--', 
-           label=f'最优特征数: {rfecv.n_features_}')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.tight_layout()
-plt.savefig(os.path.join(PLOTS_DIR, 'rfecv_feature_selection.png'), dpi=300)
-plt.close()
-
-print("选择的特征:")
-for i, feature in enumerate(selected_features, 1):
-    print(f"  {i:2d}. {feature}")
+print(f"Lasso选择的特征数量: {len(selected_features)}")
+print(f"特征选择比例: {len(selected_features)/len(feature_cols):.2%}")
 
 # 使用选择的特征
 X_final = pd.DataFrame(X_selected, columns=selected_features)
