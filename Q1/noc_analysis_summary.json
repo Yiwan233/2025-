@@ -1,78 +1,69 @@
 {
   "model_info": {
-    "best_model": "Random Forest",
-    "best_accuracy": 0.9770114942528736,
-    "overall_accuracy": 0.9930795847750865,
+    "best_model": "Gradient Boosting",
+    "best_accuracy": 0.375,
+    "overall_accuracy": 0.803921568627451,
     "feature_selection_method": "LassoCV",
-    "selected_features_count": 37
+    "selected_features_count": 21
   },
   "data_info": {
-    "total_samples": 867,
+    "total_samples": 51,
     "feature_count_original": 38,
-    "feature_count_selected": 37,
+    "feature_count_selected": 21,
     "noc_distribution": {
-      "2": 255,
-      "3": 272,
-      "4": 187,
-      "5": 153
+      "2": 15,
+      "3": 16,
+      "4": 11,
+      "5": 9
     }
   },
   "model_performance": {
     "Gradient Boosting": {
-      "accuracy": 0.9693486590038314
+      "accuracy": 0.375
     },
     "Random Forest": {
-      "accuracy": 0.9770114942528736
+      "accuracy": 0.1875
     },
     "Ensemble": {
-      "accuracy": 0.9693486590038314
+      "accuracy": 0.375
     }
   },
   "noc_class_accuracy": {
-    "2": 0.996078431372549,
-    "3": 0.9926470588235294,
-    "4": 0.9946524064171123,
-    "5": 0.9869281045751634
+    "2": 0.8,
+    "3": 0.875,
+    "4": 0.7272727272727273,
+    "5": 0.7777777777777778
   },
   "selected_features": [
-    "mac_profile",
     "total_distinct_alleles",
-    "avg_alleles_per_locus",
-    "std_alleles_per_locus",
-    "loci_gt2_alleles",
-    "loci_gt3_alleles",
-    "loci_gt4_alleles",
-    "loci_gt5_alleles",
-    "loci_gt6_alleles",
     "allele_count_dist_entropy",
     "avg_peak_height",
     "std_peak_height",
     "min_peak_height",
     "max_peak_height",
     "avg_phr",
-    "std_phr",
     "min_phr",
     "median_phr",
     "num_loci_with_phr",
-    "num_severe_imbalance_loci",
-    "ratio_severe_imbalance_loci",
     "skewness_peak_height",
     "kurtosis_peak_height",
     "modality_peak_height",
-    "num_saturated_peaks",
-    "ratio_saturated_peaks",
-    "inter_locus_balance_entropy",
     "avg_locus_allele_entropy",
     "peak_height_entropy",
-    "num_loci_with_effective_alleles",
     "height_size_correlation",
     "height_size_slope",
     "weighted_height_size_slope",
     "phr_size_slope",
-    "locus_dropout_score_weighted_by_size",
     "degradation_index_rfu_per_bp",
     "info_completeness_ratio_small_large"
   ],
-  "hyperparameters": {},
-  "timestamp": "2025-06-04 14:22:45"
+  "hyperparameters": {
+    "learning_rate": 0.5,
+    "max_depth": 5,
+    "min_samples_leaf": 4,
+    "min_samples_split": 2,
+    "n_estimators": 200,
+    "subsample": 0.8
+  },
+  "timestamp": "2025-06-05 22:34:18"
 }

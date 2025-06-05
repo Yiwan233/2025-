@@ -1,0 +1,59 @@
+{
+  "model_info": {
+    "best_model": "Random Forest",
+    "best_accuracy": 0.23076923076923078,
+    "overall_accuracy": 0.803921568627451,
+    "feature_selection_method": "Combined (Univariate + LassoCV + Importance)",
+    "selected_features_count": 15
+  },
+  "data_info": {
+    "total_samples": 51,
+    "feature_count_original": 38,
+    "feature_count_selected": 15,
+    "noc_distribution": {
+      "2": 15,
+      "3": 16,
+      "4": 11,
+      "5": 9
+    }
+  },
+  "model_performance": {
+    "Gradient Boosting": {
+      "accuracy": 0.15384615384615385
+    },
+    "Random Forest": {
+      "accuracy": 0.23076923076923078
+    },
+    "Decision Tree": {
+      "accuracy": 0.07692307692307693
+    },
+    "Ensemble": {
+      "accuracy": 0.15384615384615385
+    }
+  },
+  "noc_class_accuracy": {
+    "2": 0.7333333333333333,
+    "3": 0.875,
+    "4": 0.7272727272727273,
+    "5": 0.8888888888888888
+  },
+  "selected_features": [
+    "kurtosis_peak_height",
+    "std_peak_height",
+    "min_phr",
+    "degradation_index_rfu_per_bp",
+    "height_size_slope",
+    "peak_height_entropy",
+    "skewness_peak_height",
+    "phr_size_slope",
+    "median_phr",
+    "std_phr",
+    "allele_count_dist_entropy",
+    "max_peak_height",
+    "ratio_severe_imbalance_loci",
+    "avg_peak_height",
+    "height_size_correlation"
+  ],
+  "timestamp": "2025-06-05 23:01:30",
+  "version": "V4.1_Fixed"
+}
