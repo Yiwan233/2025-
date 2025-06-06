@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-数学建模 - 法医DNA分析 - 问题1：贡献者人数识别 (RFECV + 梯度提升机深度优化版)
+数学建模 - 法医DNA分析 - 问题1：贡献者人数识别 (随机森林优化版)
 
-版本: V7.0 - RFECV Feature Selection + Deep Gradient Boosting Optimization
-日期: 2025-06-03
-描述: 修复RFECV评分器错误 + 梯度提升机深度优化 + 集成学习增强
+版本: V8.0 - Random Forest Optimization
+日期: 2025-06-06
+描述: 基于RFECV特征选择 + 随机森林深度优化 + 详细NoC性能分析
+主要特点:
+1. 使用随机森林替代梯度提升机
+2. 三阶段参数优化（粗调→细调→微调）
+3. 详细的各NoC类别性能分析
+4. 袋外(OOB)评估增强模型可靠性
 """
 
 import pandas as pd
@@ -27,9 +32,8 @@ from sklearn.model_selection import (train_test_split, cross_val_score, Stratifi
                                    cross_validate, RepeatedStratifiedKFold)
 from sklearn.metrics import (accuracy_score, confusion_matrix, classification_report, 
                            roc_curve, auc, make_scorer, f1_score, balanced_accuracy_score,
-                           precision_recall_curve, average_precision_score)
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
+                           precision_recall_curve, average_precision_score, precision_score, recall_score)
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.feature_selection import RFECV, SelectFromModel
 from sklearn.utils import resample
@@ -49,15 +53,15 @@ plt.rcParams['font.sans-serif'] = ["Arial Unicode MS", "SimHei", "Microsoft YaHe
 plt.rcParams['axes.unicode_minus'] = False
 warnings.filterwarnings('ignore')
 
-print("=== 法医混合STR图谱NoC智能识别系统 V7.0 ===")
-print("修复RFECV错误 + 梯度提升机深度优化")
+print("=== 法医混合STR图谱NoC智能识别系统 V8.0 (随机森林版) ===")
+print("RFECV特征选择 + 随机森林深度优化 + 详细性能分析")
 
 # =====================
 # 1. 文件路径与基础设置
 # =====================
 DATA_DIR = './'
 file_path = os.path.join(DATA_DIR, '附件1：不同人数的STR图谱数据.csv')
-PLOTS_DIR = os.path.join(DATA_DIR, 'noc_gb_deep_optimization')
+PLOTS_DIR = os.path.join(DATA_DIR, 'noc_rf_optimization')
 if not os.path.exists(PLOTS_DIR):
     os.makedirs(PLOTS_DIR)
 
@@ -596,31 +600,18 @@ cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
 
 print(f"\n开始RFECV特征选择（{cv_folds}折交叉验证）...")
 
-# 创建基础梯度提升机用于RFECV
-base_estimator = GradientBoostingClassifier(
+# 创建基础随机森林用于RFECV
+base_estimator = RandomForestClassifier(
     n_estimators=100,
-    max_depth=4,
-    learning_rate=0.1,
+    max_depth=10,
+    min_samples_split=2,
+    min_samples_leaf=1,
+    max_features='sqrt',
     random_state=42,
-    warm_start=False  # 确保不使用warm_start避免参数冲突
+    n_jobs=-1
 )
 
 # 自定义评分函数（平衡准确率）
-def balanced_accuracy_scorer(estimator, X, y):
-    """平衡准确率评分函数"""
-    y_pred = estimator.predict(X)
-    unique_classes = np.unique(y)
-    class_accuracies = []
-    
-    for cls in unique_classes:
-        cls_mask = (y == cls)
-        if cls_mask.sum() > 0:
-            cls_acc = (y_pred[cls_mask] == y[cls_mask]).mean()
-            class_accuracies.append(cls_acc)
-    
-    return np.mean(class_accuracies)
-
-# 使用sklearn内置的balanced_accuracy_score更可靠
 from sklearn.metrics import balanced_accuracy_score
 balanced_scorer = make_scorer(balanced_accuracy_score)
 
@@ -649,14 +640,13 @@ selected_indices = [i for i in range(len(feature_cols)) if rfecv.support_[i]]
 print(f"\nRFECV选择的特征数: {len(selected_features)}")
 print(f"最优特征数: {rfecv.n_features_}")
 
-# 修复：使用正确的属性访问最佳分数
+# 获取最佳分数
 if hasattr(rfecv, 'cv_results_'):
-    best_score = rfecv.cv_results_['mean_test_score'][rfecv.n_features_ - 1]
+    best_score = max(rfecv.cv_results_['mean_test_score'])
 elif hasattr(rfecv, 'grid_scores_'):
-    best_score = rfecv.grid_scores_[rfecv.n_features_ - 1]
+    best_score = max(rfecv.grid_scores_)
 else:
-    # 如果都没有，计算当前最佳分数
-    best_score = max(rfecv.cv_results_['mean_test_score']) if hasattr(rfecv, 'cv_results_') else 0.0
+    best_score = 0.0
 
 print(f"最佳交叉验证分数: {best_score:.4f}")
 
@@ -670,13 +660,12 @@ X_selected = X_scaled[:, selected_indices]
 # 可视化RFECV结果
 plt.figure(figsize=(12, 8))
 
-# 修复：使用正确的属性获取分数数组
 if hasattr(rfecv, 'cv_results_'):
     scores = rfecv.cv_results_['mean_test_score']
 elif hasattr(rfecv, 'grid_scores_'):
     scores = rfecv.grid_scores_
 else:
-    scores = [0.0] * len(feature_cols)  # 默认值
+    scores = [0.0] * len(feature_cols)
 
 plt.plot(range(1, len(scores) + 1), scores, 'bo-')
 plt.axvline(x=rfecv.n_features_, color='red', linestyle='--', 
@@ -691,9 +680,84 @@ plt.savefig(os.path.join(PLOTS_DIR, 'RFECV结果.png'), dpi=300, bbox_inches='ti
 plt.close()
 
 # =====================
-# 8. 高级梯度提升机优化
+# 8. 随机森林优化器
 # =====================
-print("\n=== 步骤5: 梯度提升机深度优化 ===")
+class RandomForestOptimizer:
+    """随机森林优化器，针对不同NoC使用不同策略"""
+    
+    def __init__(self):
+        self.noc_specific_configs = {
+            2: {
+                'class_weight': {2: 1.0},
+                'feature_selection_params': {'min_features_to_select': 8},
+                'model_params': {
+                    'n_estimators': 200,
+                    'max_depth': 10,
+                    'min_samples_split': 2,
+                    'min_samples_leaf': 1,
+                    'max_features': 'sqrt',
+                    'bootstrap': True
+                }
+            },
+            3: {
+                'class_weight': {3: 1.2},
+                'feature_selection_params': {'min_features_to_select': 10},
+                'model_params': {
+                    'n_estimators': 300,
+                    'max_depth': 12,
+                    'min_samples_split': 3,
+                    'min_samples_leaf': 2,
+                    'max_features': 'sqrt',
+                    'bootstrap': True
+                }
+            },
+            4: {
+                'class_weight': {4: 2.0},
+                'feature_selection_params': {'min_features_to_select': 12},
+                'model_params': {
+                    'n_estimators': 500,
+                    'max_depth': 15,
+                    'min_samples_split': 2,
+                    'min_samples_leaf': 1,
+                    'max_features': 'sqrt',
+                    'bootstrap': True,
+                    'oob_score': True
+                }
+            },
+            5: {
+                'class_weight': {5: 3.0},
+                'feature_selection_params': {'min_features_to_select': 15},
+                'model_params': {
+                    'n_estimators': 800,
+                    'max_depth': 20,
+                    'min_samples_split': 2,
+                    'min_samples_leaf': 1,
+                    'max_features': 'sqrt',
+                    'bootstrap': True,
+                    'oob_score': True
+                }
+            }
+        }
+    
+    def get_sample_weights(self, y):
+        """计算样本权重，对少数类给予更高权重"""
+        # 基础权重
+        base_weights = compute_sample_weight('balanced', y)
+        
+        # 对4人和5人样本额外加权
+        enhanced_weights = base_weights.copy()
+        for i, label in enumerate(y):
+            if label == 4:
+                enhanced_weights[i] *= 2.5
+            elif label == 5:
+                enhanced_weights[i] *= 4.0
+        
+        return enhanced_weights
+
+# =====================
+# 9. 随机森林深度优化
+# =====================
+print("\n=== 步骤5: 随机森林深度优化 ===")
 
 # 自定义分层划分
 def custom_stratified_split(X, y, test_size=0.25, random_state=42):
@@ -739,8 +803,11 @@ print(f"测试集形状: {X_test.shape}")
 print(f"训练集标签分布: {pd.Series(y_train).value_counts().sort_index().to_dict()}")
 print(f"测试集标签分布: {pd.Series(y_test).value_counts().sort_index().to_dict()}")
 
+# 初始化优化器
+rf_optimizer = RandomForestOptimizer()
+
 # 计算类别权重
-class_weights = compute_sample_weight('balanced', y_train)
+class_weights = rf_optimizer.get_sample_weights(y_train)
 
 # 设置优化的交叉验证
 min_class_size_train = pd.Series(y_train).value_counts().min()
@@ -748,20 +815,23 @@ cv_folds_opt = min(5, min_class_size_train)
 cv_opt = StratifiedKFold(n_splits=cv_folds_opt, shuffle=True, random_state=42)
 
 # === 阶段1: 粗调参数 ===
-print("\n阶段1: 梯度提升机粗调参数...")
+print("\n阶段1: 随机森林粗调参数...")
 
 # 粗调参数网格
 coarse_param_grid = {
-    'n_estimators': [100, 200, 300, 500],
-    'max_depth': [3, 4, 5, 6, 7],
-    'learning_rate': [0.05, 0.1, 0.15, 0.2],
-    'subsample': [0.8, 0.9, 1.0]
+    'n_estimators': [100, 200, 300, 500, 800],
+    'max_depth': [5, 10, 15, 20, None],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4],
+    'max_features': ['sqrt', 'log2', None],
+    'bootstrap': [True],
+    'oob_score': [True]
 }
 
 # 粗调搜索
 print("执行粗调随机搜索...")
 coarse_search = RandomizedSearchCV(
-    GradientBoostingClassifier(random_state=42),
+    RandomForestClassifier(random_state=42, n_jobs=-1),
     coarse_param_grid,
     n_iter=50,
     cv=cv_opt,
@@ -782,50 +852,41 @@ print("\n阶段2: 基于粗调结果进行细调...")
 # 提取粗调最佳参数
 best_coarse = coarse_search.best_params_
 
-# 细调参数网格（在粗调最佳参数附近搜索）
+# 细调参数网格
 fine_param_grid = {}
 
 # n_estimators 细调
 if best_coarse['n_estimators'] == 100:
-    fine_param_grid['n_estimators'] = [80, 100, 120, 150]
-elif best_coarse['n_estimators'] == 500:
-    fine_param_grid['n_estimators'] = [400, 500, 600, 700]
+    fine_param_grid['n_estimators'] = [80, 100, 150, 200]
+elif best_coarse['n_estimators'] == 800:
+    fine_param_grid['n_estimators'] = [600, 800, 1000, 1200]
 else:
     base_n = best_coarse['n_estimators']
-    fine_param_grid['n_estimators'] = [base_n - 50, base_n, base_n + 50, base_n + 100]
+    fine_param_grid['n_estimators'] = [base_n - 100, base_n, base_n + 100, base_n + 200]
 
 # max_depth 细调
-base_depth = best_coarse['max_depth']
-fine_param_grid['max_depth'] = [max(2, base_depth - 1), base_depth, base_depth + 1]
-
-# learning_rate 细调
-base_lr = best_coarse['learning_rate']
-if base_lr == 0.05:
-    fine_param_grid['learning_rate'] = [0.03, 0.05, 0.07, 0.08]
-elif base_lr == 0.2:
-    fine_param_grid['learning_rate'] = [0.15, 0.18, 0.2, 0.25]
+if best_coarse['max_depth'] is None:
+    fine_param_grid['max_depth'] = [15, 20, 25, None]
 else:
-    fine_param_grid['learning_rate'] = [base_lr - 0.02, base_lr, base_lr + 0.02, base_lr + 0.05]
+    base_depth = best_coarse['max_depth']
+    fine_param_grid['max_depth'] = [max(5, base_depth - 2), base_depth, base_depth + 2, base_depth + 5]
 
-# subsample 细调
-base_sub = best_coarse['subsample']
-if base_sub == 0.8:
-    fine_param_grid['subsample'] = [0.75, 0.8, 0.85]
-elif base_sub == 1.0:
-    fine_param_grid['subsample'] = [0.9, 0.95, 1.0]
-else:
-    fine_param_grid['subsample'] = [base_sub - 0.1, base_sub, base_sub + 0.1]
-
-# 添加其他重要参数
+# 其他参数细调
 fine_param_grid.update({
-    'min_samples_split': [2, 5, 10, 15],
-    'min_samples_leaf': [1, 2, 4, 6],
-    'max_features': ['sqrt', 'log2', None, 0.8]
+    'min_samples_split': [max(2, best_coarse['min_samples_split'] - 1), 
+                         best_coarse['min_samples_split'],
+                         best_coarse['min_samples_split'] + 2],
+    'min_samples_leaf': [max(1, best_coarse['min_samples_leaf'] - 1),
+                        best_coarse['min_samples_leaf'],
+                        best_coarse['min_samples_leaf'] + 1],
+    'max_features': [best_coarse['max_features']],
+    'bootstrap': [True],
+    'oob_score': [True]
 })
 
 print("执行细调网格搜索...")
 fine_search = GridSearchCV(
-    GradientBoostingClassifier(random_state=42),
+    RandomForestClassifier(random_state=42, n_jobs=-1),
     fine_param_grid,
     cv=cv_opt,
     scoring=balanced_scorer,
@@ -841,29 +902,27 @@ print(f"细调最佳分数: {fine_search.best_score_:.4f}")
 # === 阶段3: 最终优化 ===
 print("\n阶段3: 最终参数微调...")
 
-# 最终微调（主要针对正则化参数）
+# 最终微调参数
 final_params = fine_search.best_params_.copy()
 
-# 验证正则化参数
+# 针对类别不平衡的最终优化
 validation_param_grid = {
-    'min_samples_split': [max(2, final_params['min_samples_split'] - 2), 
-                         final_params['min_samples_split'],
-                         final_params['min_samples_split'] + 2],
-    'min_samples_leaf': [max(1, final_params['min_samples_leaf'] - 1),
-                        final_params['min_samples_leaf'],
-                        final_params['min_samples_leaf'] + 1],
-    'min_weight_fraction_leaf': [0.0, 0.01, 0.02],
-    'max_leaf_nodes': [None, 20, 30, 50]
+    'class_weight': [None, 'balanced', 'balanced_subsample'],
+    'criterion': ['gini', 'entropy'],
+    'max_leaf_nodes': [None, 50, 100, 200]
 }
 
-# 固定其他参数
-base_estimator_final = GradientBoostingClassifier(
+# 固定其他最优参数
+base_estimator_final = RandomForestClassifier(
     n_estimators=final_params['n_estimators'],
     max_depth=final_params['max_depth'],
-    learning_rate=final_params['learning_rate'],
-    subsample=final_params['subsample'],
+    min_samples_split=final_params['min_samples_split'],
+    min_samples_leaf=final_params['min_samples_leaf'],
     max_features=final_params['max_features'],
-    random_state=42
+    bootstrap=final_params['bootstrap'],
+    oob_score=final_params['oob_score'],
+    random_state=42,
+    n_jobs=-1
 )
 
 print("执行最终微调...")
@@ -883,27 +942,31 @@ print(f"最终最佳分数: {final_search.best_score_:.4f}")
 
 # 创建最优模型
 final_params.update(final_search.best_params_)
-optimal_gb_model = GradientBoostingClassifier(**final_params, random_state=42)
-optimal_gb_model.fit(X_train, y_train, sample_weight=class_weights)
+optimal_rf_model = RandomForestClassifier(**final_params, random_state=42, n_jobs=-1)
+optimal_rf_model.fit(X_train, y_train, sample_weight=class_weights)
 
 # 在测试集上评估
-y_pred_gb = optimal_gb_model.predict(X_test)
-gb_accuracy = accuracy_score(y_test, y_pred_gb)
-balanced_acc = balanced_accuracy_scorer(optimal_gb_model, X_test, y_test)
-f1_weighted = f1_score(y_test, y_pred_gb, average='weighted')
+y_pred_rf = optimal_rf_model.predict(X_test)
+rf_accuracy = accuracy_score(y_test, y_pred_rf)
+balanced_acc = balanced_accuracy_score(y_test, y_pred_rf)
+f1_weighted = f1_score(y_test, y_pred_rf, average='weighted')
 
-print(f"\n最优梯度提升机测试集性能:")
-print(f"  准确率: {gb_accuracy:.4f}")
+print(f"\n最优随机森林测试集性能:")
+print(f"  准确率: {rf_accuracy:.4f}")
 print(f"  平衡准确率: {balanced_acc:.4f}")
 print(f"  加权F1分数: {f1_weighted:.4f}")
 
-# =====================
-# 9. 验证曲线分析
-# =====================
-print("\n=== 步骤6: 验证曲线分析 ===")
+# 如果模型支持OOB评估
+if hasattr(optimal_rf_model, 'oob_score_') and optimal_rf_model.oob_score_ is not None:
+    print(f"  袋外(OOB)评估分数: {optimal_rf_model.oob_score_:.4f}")
 
-# 分析关键超参数的影响
-key_params = ['n_estimators', 'max_depth', 'learning_rate']
+# =====================
+# 10. 验证曲线分析
+# =====================
+print("\n=== 步骤6: 随机森林验证曲线分析 ===")
+
+# 分析随机森林关键超参数的影响
+key_params = ['n_estimators', 'max_depth', 'max_features']
 
 fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
@@ -912,62 +975,222 @@ for i, param in enumerate(key_params):
     
     # 设置参数范围
     if param == 'n_estimators':
-        param_range = [50, 100, 200, 300, 400, 500]
+        param_range = [50, 100, 200, 300, 500, 800]
     elif param == 'max_depth':
-        param_range = [2, 3, 4, 5, 6, 7, 8]
-    elif param == 'learning_rate':
-        param_range = [0.01, 0.05, 0.1, 0.15, 0.2, 0.3]
+        param_range = [5, 10, 15, 20, 25, None]
+    elif param == 'max_features':
+        param_range = ['sqrt', 'log2', None, 0.3, 0.5, 0.8]
     
-    # 创建基础模型（使用最优参数，但变化当前参数）
+    # 创建基础模型
     base_params = final_params.copy()
-    base_params.pop(param, None)  # 移除当前要分析的参数
+    base_params.pop(param, None)
     
-    train_scores, validation_scores = validation_curve(
-        GradientBoostingClassifier(**base_params, random_state=42),
-        X_train, y_train,
-        param_name=param, param_range=param_range,
-        cv=cv_opt, scoring=balanced_scorer,
-        n_jobs=-1
-    )
-    
-    train_mean = np.mean(train_scores, axis=1)
-    train_std = np.std(train_scores, axis=1)
-    validation_mean = np.mean(validation_scores, axis=1)
-    validation_std = np.std(validation_scores, axis=1)
-    
-    axes[i].plot(param_range, train_mean, 'o-', color='blue', label='训练集')
-    axes[i].plot(param_range, validation_mean, 'o-', color='red', label='验证集')
-    axes[i].fill_between(param_range, train_mean - train_std, train_mean + train_std, alpha=0.1, color='blue')
-    axes[i].fill_between(param_range, validation_mean - validation_std, validation_mean + validation_std, alpha=0.1, color='red')
-    
-    # 标记最优值
-    optimal_value = final_params[param]
-    if optimal_value in param_range:
-        optimal_idx = param_range.index(optimal_value)
-        axes[i].axvline(x=optimal_value, color='green', linestyle='--', alpha=0.7, label=f'最优值: {optimal_value}')
-    
-    axes[i].set_xlabel(param)
-    axes[i].set_ylabel('平衡准确率')
-    axes[i].set_title(f'{param} 验证曲线')
-    axes[i].legend()
-    axes[i].grid(True, alpha=0.3)
+    try:
+        # 处理None值的特殊情况
+        if param == 'max_depth' and None in param_range:
+            # 对于max_depth，特别处理None值
+            param_range_for_validation = []
+            param_labels = []
+            for p in param_range:
+                if p is None:
+                    param_range_for_validation.append(100)  # 用一个大数代替None
+                    param_labels.append('None')
+                else:
+                    param_range_for_validation.append(p)
+                    param_labels.append(str(p))
+            
+            train_scores, validation_scores = validation_curve(
+                RandomForestClassifier(**{k: v for k, v in base_params.items() if k != 'max_depth'}, 
+                                     random_state=42, n_jobs=-1),
+                X_train, y_train,
+                param_name='max_depth', 
+                param_range=param_range,
+                cv=cv_opt, scoring=balanced_scorer,
+                n_jobs=-1
+            )
+        else:
+            train_scores, validation_scores = validation_curve(
+                RandomForestClassifier(**base_params, random_state=42, n_jobs=-1),
+                X_train, y_train,
+                param_name=param, 
+                param_range=param_range,
+                cv=cv_opt, scoring=balanced_scorer,
+                n_jobs=-1
+            )
+            param_labels = [str(p) for p in param_range]
+        
+        train_mean = np.mean(train_scores, axis=1)
+        train_std = np.std(train_scores, axis=1)
+        validation_mean = np.mean(validation_scores, axis=1)
+        validation_std = np.std(validation_scores, axis=1)
+        
+        x_axis = range(len(param_range))
+        
+        axes[i].plot(x_axis, train_mean, 'o-', color='blue', label='训练集')
+        axes[i].plot(x_axis, validation_mean, 'o-', color='red', label='验证集')
+        axes[i].fill_between(x_axis, train_mean - train_std, train_mean + train_std, alpha=0.1, color='blue')
+        axes[i].fill_between(x_axis, validation_mean - validation_std, validation_mean + validation_std, alpha=0.1, color='red')
+        
+        # 设置x轴标签
+        axes[i].set_xticks(x_axis)
+        axes[i].set_xticklabels(param_labels, rotation=45)
+        
+        # 标记最优值
+        optimal_value = final_params.get(param)
+        if optimal_value in param_range:
+            optimal_idx = param_range.index(optimal_value)
+            axes[i].axvline(x=optimal_idx, color='green', linestyle='--', alpha=0.7, 
+                           label=f'最优值: {optimal_value}')
+        
+        axes[i].set_xlabel(param)
+        axes[i].set_ylabel('平衡准确率')
+        axes[i].set_title(f'{param} 验证曲线')
+        axes[i].legend()
+        axes[i].grid(True, alpha=0.3)
+        
+    except Exception as e:
+        print(f"参数 {param} 的验证曲线生成失败: {e}")
+        axes[i].text(0.5, 0.5, f'{param}\n验证曲线生成失败', 
+                    ha='center', va='center', transform=axes[i].transAxes)
 
 plt.tight_layout()
-plt.savefig(os.path.join(PLOTS_DIR, '验证曲线分析.png'), dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(PLOTS_DIR, 'rf_validation_curves.png'), dpi=300, bbox_inches='tight')
 plt.close()
 
 # =====================
-# 10. 结果分析与可视化
+# 11. 详细的NoC性能分析
+# =====================
+def detailed_noc_performance_analysis(y_true, y_pred, label_encoder):
+    """详细的NoC性能分析"""
+    
+    # 转换为原始标签
+    y_true_orig = label_encoder.inverse_transform(y_true)
+    y_pred_orig = label_encoder.inverse_transform(y_pred)
+    
+    print("\n" + "="*80)
+    print("                      各贡献者人数详细性能分析")
+    print("="*80)
+    
+    # 总体性能
+    overall_accuracy = accuracy_score(y_true_orig, y_pred_orig)
+    print(f"\n📊 总体性能指标:")
+    print(f"   整体准确率: {overall_accuracy:.4f} ({overall_accuracy*100:.2f}%)")
+    
+    # 各类别详细分析
+    unique_classes = sorted(list(set(y_true_orig)))
+    
+    print(f"\n📈 各贡献者人数类别详细性能:")
+    print("-" * 100)
+    print(f"{'贡献者人数':^12} {'样本数':^8} {'正确预测':^10} {'准确率':^10} {'精确率':^10} {'召回率':^10} {'F1分数':^10} {'性能等级':^12}")
+    print("-" * 100)
+    
+    # 计算各类别指标
+    precision_scores = precision_score(y_true_orig, y_pred_orig, average=None, labels=unique_classes, zero_division=0)
+    recall_scores = recall_score(y_true_orig, y_pred_orig, average=None, labels=unique_classes, zero_division=0)
+    f1_scores = f1_score(y_true_orig, y_pred_orig, average=None, labels=unique_classes, zero_division=0)
+    
+    performance_data = []
+    
+    for i, noc in enumerate(unique_classes):
+        # 统计信息
+        true_mask = (y_true_orig == noc)
+        total_samples = true_mask.sum()
+        correct_predictions = ((y_true_orig == noc) & (y_pred_orig == noc)).sum()
+        accuracy = correct_predictions / total_samples if total_samples > 0 else 0
+        
+        precision = precision_scores[i]
+        recall = recall_scores[i]
+        f1 = f1_scores[i]
+        
+        # 性能等级评定
+        if accuracy >= 0.95:
+            grade = "🟢 优秀"
+        elif accuracy >= 0.85:
+            grade = "🟡 良好" 
+        elif accuracy >= 0.70:
+            grade = "🟠 一般"
+        elif accuracy >= 0.50:
+            grade = "🔴 较差"
+        else:
+            grade = "⚫ 很差"
+        
+        print(f"{noc:^12}人 {total_samples:^8} {correct_predictions:^10} {accuracy:^10.4f} {precision:^10.4f} {recall:^10.4f} {f1:^10.4f} {grade:^12}")
+        
+        performance_data.append({
+            'noc': noc,
+            'total_samples': total_samples,
+            'correct_predictions': correct_predictions,
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            'grade': grade
+        })
+    
+    print("-" * 100)
+    
+    # 混淆矩阵分析
+    print(f"\n🔍 预测错误详细分析:")
+    cm = confusion_matrix(y_true_orig, y_pred_orig, labels=unique_classes)
+    
+    for i, true_noc in enumerate(unique_classes):
+        errors = []
+        for j, pred_noc in enumerate(unique_classes):
+            if i != j and cm[i, j] > 0:
+                error_rate = cm[i, j] / cm[i].sum() * 100
+                errors.append(f"{pred_noc}人({cm[i, j]}次, {error_rate:.1f}%)")
+        
+        if errors:
+            print(f"   {true_noc}人 → 误判为: {', '.join(errors)}")
+        else:
+            print(f"   {true_noc}人 → 无误判 ✅")
+    
+    # 特殊关注少数类
+    print(f"\n⚠️  少数类别特别关注:")
+    minority_classes = [data for data in performance_data if data['total_samples'] < 20]
+    
+    if minority_classes:
+        for data in minority_classes:
+            print(f"   {data['noc']}人混合样本 (样本数: {data['total_samples']}):")
+            print(f"      准确率: {data['accuracy']:.4f} - {data['grade']}")
+            if data['accuracy'] < 0.8:
+                print(f"      ⚠️  性能偏低，建议:")
+                print(f"         - 增加训练样本")
+                print(f"         - 调整类别权重") 
+                print(f"         - 使用专门的少数类学习策略")
+    else:
+        print("   所有类别样本数量充足 ✅")
+    
+    # 宏观指标
+    macro_precision = np.mean(precision_scores)
+    macro_recall = np.mean(recall_scores) 
+    macro_f1 = np.mean(f1_scores)
+    
+    weighted_precision = precision_score(y_true_orig, y_pred_orig, average='weighted', zero_division=0)
+    weighted_recall = recall_score(y_true_orig, y_pred_orig, average='weighted', zero_division=0)
+    weighted_f1 = f1_score(y_true_orig, y_pred_orig, average='weighted', zero_division=0)
+    
+    print(f"\n📊 宏观性能指标:")
+    print(f"   宏平均 - 精确率: {macro_precision:.4f}, 召回率: {macro_recall:.4f}, F1分数: {macro_f1:.4f}")
+    print(f"   加权平均 - 精确率: {weighted_precision:.4f}, 召回率: {weighted_recall:.4f}, F1分数: {weighted_f1:.4f}")
+    
+    return performance_data
+
+# =====================
+# 12. 结果分析与可视化
 # =====================
 print("\n=== 步骤7: 结果分析与可视化 ===")
 
+# 调用详细性能分析
+performance_results = detailed_noc_performance_analysis(y_test, y_pred_rf, label_encoder)
+
 # 转换标签用于显示
 y_test_orig = label_encoder.inverse_transform(y_test)
-y_pred_orig = label_encoder.inverse_transform(y_pred_gb)
+y_pred_orig = label_encoder.inverse_transform(y_pred_rf)
 
 # 分类报告
 class_names = [f"{x}人" for x in sorted(label_encoder.classes_)]
-print(f"\n梯度提升机详细分类报告:")
+print(f"\n随机森林详细分类报告:")
 print(classification_report(y_test_orig, y_pred_orig, target_names=class_names))
 
 # 混淆矩阵可视化
@@ -975,7 +1198,7 @@ plt.figure(figsize=(10, 8))
 cm = confusion_matrix(y_test_orig, y_pred_orig)
 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
            xticklabels=class_names, yticklabels=class_names)
-plt.title('优化梯度提升机混淆矩阵')
+plt.title('优化随机森林混淆矩阵')
 plt.ylabel('真实NoC')
 plt.xlabel('预测NoC')
 plt.tight_layout()
@@ -986,18 +1209,18 @@ plt.close()
 plt.figure(figsize=(14, 10))
 feature_importance = pd.DataFrame({
     '特征': selected_features,
-    '重要性': optimal_gb_model.feature_importances_
+    '重要性': optimal_rf_model.feature_importances_
 }).sort_values('重要性', ascending=False)
 
 # 显示所有选择的特征
 sns.barplot(data=feature_importance, x='重要性', y='特征')
-plt.title(f'梯度提升机特征重要性排名 (RFECV选择的{len(selected_features)}个特征)')
+plt.title(f'随机森林特征重要性排名 (RFECV选择的{len(selected_features)}个特征)')
 plt.xlabel('特征重要性')
 plt.tight_layout()
 plt.savefig(os.path.join(PLOTS_DIR, '特征重要性.png'), dpi=300, bbox_inches='tight')
 plt.close()
 
-print(f"\n梯度提升机特征重要性排名:")
+print(f"\n随机森林特征重要性排名:")
 for idx, row in feature_importance.iterrows():
     print(f"  {row['特征']:35} {row['重要性']:.4f}")
 
@@ -1006,7 +1229,7 @@ from sklearn.model_selection import learning_curve
 
 try:
     train_sizes, train_scores, val_scores = learning_curve(
-        optimal_gb_model, X_selected, y_encoded, cv=cv_opt, 
+        optimal_rf_model, X_selected, y_encoded, cv=cv_opt, 
         train_sizes=np.linspace(0.1, 1.0, 10),
         scoring=balanced_scorer, random_state=42,
         n_jobs=-1
@@ -1025,7 +1248,7 @@ try:
 
     plt.xlabel('训练样本数')
     plt.ylabel('平衡准确率')
-    plt.title('优化梯度提升机学习曲线')
+    plt.title('优化随机森林学习曲线')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -1047,7 +1270,7 @@ plt.figure(figsize=(10, 6))
 plt.plot(optimization_stages, optimization_scores, 'bo-', linewidth=2, markersize=8)
 plt.xlabel('优化阶段')
 plt.ylabel('交叉验证分数')
-plt.title('梯度提升机参数优化过程')
+plt.title('随机森林参数优化过程')
 plt.grid(True, alpha=0.3)
 
 for i, score in enumerate(optimization_scores):
@@ -1058,14 +1281,14 @@ plt.savefig(os.path.join(PLOTS_DIR, '优化过程.png'), dpi=300, bbox_inches='t
 plt.close()
 
 # =====================
-# 11. SHAP可解释性分析
+# 13. SHAP可解释性分析
 # =====================
 if SHAP_AVAILABLE:
     print("\n=== 步骤8: SHAP可解释性分析 ===")
     
     try:
         # 创建SHAP解释器
-        explainer = shap.TreeExplainer(optimal_gb_model)
+        explainer = shap.TreeExplainer(optimal_rf_model)
         
         # 计算SHAP值
         shap_sample_size = min(30, len(X_test))
@@ -1118,12 +1341,12 @@ if SHAP_AVAILABLE:
         print(f"SHAP分析失败: {e}")
 
 # =====================
-# 12. 模型预测与保存
+# 14. 模型预测与保存
 # =====================
 print("\n=== 步骤9: 模型预测与保存 ===")
 
 # 对所有样本进行预测
-y_pred_all = optimal_gb_model.predict(X_selected)
+y_pred_all = optimal_rf_model.predict(X_selected)
 y_pred_all_orig = label_encoder.inverse_transform(y_pred_all)
 
 # 添加预测结果到特征数据框
@@ -1159,14 +1382,14 @@ plt.savefig(os.path.join(PLOTS_DIR, '各类别准确率.png'), dpi=300, bbox_inc
 plt.close()
 
 # 保存结果
-df_features.to_csv(os.path.join(DATA_DIR, 'NoC识别结果_RFECV_GB优化版.csv'), 
+df_features.to_csv(os.path.join(DATA_DIR, 'NoC识别结果_RFECV_RF优化版.csv'), 
                    index=False, encoding='utf-8-sig')
 
 # 保存模型
 import joblib
-model_filename = os.path.join(DATA_DIR, 'noc_optimized_gradient_boosting_model.pkl')
+model_filename = os.path.join(DATA_DIR, 'noc_optimized_random_forest_model.pkl')
 joblib.dump({
-    'model': optimal_gb_model,
+    'model': optimal_rf_model,
     'scaler': scaler,
     'label_encoder': label_encoder,
     'selected_features': selected_features,
@@ -1185,10 +1408,10 @@ print(f"优化模型已保存至: {model_filename}")
 # 保存详细摘要
 summary = {
     '模型信息': {
-        '模型类型': 'OptimizedGradientBoostingClassifier',
+        '模型类型': 'OptimizedRandomForestClassifier',
         '特征选择方法': 'RFECV',
         '优化阶段': ['粗调', '细调', '最终微调'],
-        '测试集准确率': float(gb_accuracy),
+        '测试集准确率': float(rf_accuracy),
         '平衡准确率': float(balanced_acc),
         '加权F1分数': float(f1_weighted),
         '整体准确率': float(overall_accuracy)
@@ -1197,7 +1420,7 @@ summary = {
         '原始特征数': len(feature_cols),
         '最终特征数': len(selected_features),
         'RFECV最优特征数': int(rfecv.n_features_),
-        'RFECV最佳分数': float(best_score),  # 使用修复后的best_score
+        'RFECV最佳分数': float(best_score),
         '选择的特征': selected_features
     },
     '优化过程': {
@@ -1229,14 +1452,18 @@ summary = {
     '时间戳': pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
 }
 
-with open(os.path.join(DATA_DIR, 'NoC分析摘要_RFECV_GB优化版.json'), 'w', encoding='utf-8') as f:
+# 如果有OOB分数，添加到摘要中
+if hasattr(optimal_rf_model, 'oob_score_') and optimal_rf_model.oob_score_ is not None:
+    summary['模型信息']['OOB评估分数'] = float(optimal_rf_model.oob_score_)
+
+with open(os.path.join(DATA_DIR, 'NoC分析摘要_RFECV_RF优化版.json'), 'w', encoding='utf-8') as f:
     json.dump(summary, f, ensure_ascii=False, indent=2)
 
 # =====================
-# 13. 最终报告
+# 15. 最终报告
 # =====================
 print("\n" + "="*80)
-print("         法医混合STR图谱NoC识别 - RFECV+梯度提升机优化版最终报告")
+print("         法医混合STR图谱NoC识别 - RFECV+随机森林优化版最终报告")
 print("="*80)
 
 print(f"\n📊 数据概况:")
@@ -1247,21 +1474,107 @@ print(f"   • RFECV选择特征数: {len(selected_features)}")
 
 print(f"\n🔧 技术创新:")
 print(f"   • 使用RFECV递归特征消除进行特征选择")
-print(f"   • 三阶段梯度提升机参数优化（粗调→细调→微调）")
+print(f"   • 三阶段随机森林参数优化（粗调→细调→微调）")
 print(f"   • 平衡准确率作为优化目标，处理类别不平衡")
 print(f"   • 验证曲线分析关键超参数影响")
+print(f"   • 利用袋外(OOB)评估提高模型可靠性")
 
 print(f"\n🎯 RFECV特征选择结果:")
 print(f"   • 最优特征数: {rfecv.n_features_}")
-print(f"   • 最佳交叉验证分数: {best_score:.4f}")  # 使用修复后的best_score
+print(f"   • 最佳交叉验证分数: {best_score:.4f}")
 print(f"   • 特征减少率: {(1 - len(selected_features)/len(feature_cols)):.1%}")
 
-print(f"\n🚀 梯度提升机优化历程:")
+print(f"\n🚀 随机森林优化历程:")
 print(f"   • 粗调阶段: {coarse_search.best_score_:.4f}")
 print(f"   • 细调阶段: {fine_search.best_score_:.4f}")
 print(f"   • 最终微调阶段: {final_search.best_score_:.4f}")
 print(f"   • 最终模型参数: {final_params}")
-print(f"   • 测试集准确率: {gb_accuracy:.4f}")
+print(f"   • 测试集准确率: {rf_accuracy:.4f}")
 print(f"   • 平衡准确率: {balanced_acc:.4f}")
 print(f"   • 加权F1分数: {f1_weighted:.4f}")
 print(f"   • 整体预测准确率: {overall_accuracy:.4f}")
+
+if hasattr(optimal_rf_model, 'oob_score_') and optimal_rf_model.oob_score_ is not None:
+    print(f"   • 袋外评估分数: {optimal_rf_model.oob_score_:.4f}")
+
+print(f"\n📈 各类别性能表现:")
+performance_summary = []
+for _, row in noc_accuracy.iterrows():
+    noc = int(row['贡献者人数'])
+    acc = row['准确率']
+    sample_count = len(df_features[df_features['贡献者人数'] == noc])
+    
+    if acc >= 0.9:
+        performance = "🟢 优秀"
+    elif acc >= 0.8:
+        performance = "🟡 良好"
+    elif acc >= 0.6:
+        performance = "🟠 一般"
+    else:
+        performance = "🔴 需改进"
+    
+    print(f"   • {noc}人混合样本: {acc:.4f} ({acc*100:.1f}%) - {performance} ({sample_count}个样本)")
+    performance_summary.append((noc, acc, sample_count))
+
+print(f"\n🔍 前5位最重要特征:")
+top_5_features = feature_importance.head(5)
+for i, (_, row) in enumerate(top_5_features.iterrows(), 1):
+    feature_cn = FEATURE_NAME_MAPPING.get(row['特征'], row['特征'])
+    print(f"   {i}. {feature_cn:<25} (重要性: {row['重要性']:.4f})")
+
+print(f"\n📋 模型特点说明:")
+print(f"   • 基于 {len(selected_features)} 个精选生物特征进行预测")
+print(f"   • 特征涵盖: 图谱统计特性、峰高分布特征、位点平衡性、")
+print(f"     信息熵指标、DNA降解标志等多个维度")
+print(f"   • 采用随机森林算法，利用Bootstrap聚合和特征随机采样")
+print(f"   • 针对少数类样本进行特殊优化，使用类别权重平衡")
+print(f"   • 整体预测准确率达到 {overall_accuracy:.1%}，具有较好的实用价值")
+
+# 数据质量评估
+print(f"\n📊 数据质量评估:")
+noc_distribution = df_features['贡献者人数'].value_counts().sort_index()
+max_samples = noc_distribution.max()
+min_samples = noc_distribution.min()
+imbalance_ratio = max_samples / min_samples
+
+print(f"   • 样本不平衡程度: {imbalance_ratio:.1f}:1")
+if imbalance_ratio > 10:
+    print(f"   • ⚠️  数据严重不平衡，已采用加权采样策略")
+elif imbalance_ratio > 5:
+    print(f"   • ⚠️  数据中度不平衡，已采用权重平衡策略")
+else:
+    print(f"   • ✅ 数据平衡性良好")
+
+# 随机森林特有优势
+print(f"\n🌲 随机森林算法优势:")
+print(f"   • Bootstrap聚合减少过拟合风险")
+print(f"   • 特征随机采样提高泛化能力")
+print(f"   • 对噪声和异常值具有较强鲁棒性")
+print(f"   • 提供特征重要性排名，增强可解释性")
+if hasattr(optimal_rf_model, 'oob_score_') and optimal_rf_model.oob_score_ is not None:
+    print(f"   • 袋外评估提供无偏性能估计")
+
+# 改进建议
+print(f"\n💡 改进建议:")
+low_performance_classes = [noc for noc, acc, _ in performance_summary if acc < 0.8]
+if low_performance_classes:
+    print(f"   • 针对 {', '.join(map(str, low_performance_classes))} 人混合样本:")
+    print(f"     - 增加训练样本数量")
+    print(f"     - 调整随机森林的class_weight参数")
+    print(f"     - 考虑使用cost-sensitive learning")
+    print(f"     - 尝试集成学习方法")
+else:
+    print(f"   • ✅ 所有类别性能均达到良好水平")
+
+print(f"\n💾 输出文件:")
+print(f"   • 特征数据文件: NoC识别结果_RFECV_RF优化版.csv")
+print(f"   • 模型性能摘要: NoC分析摘要_RFECV_RF优化版.json")
+print(f"   • 训练好的模型: noc_optimized_random_forest_model.pkl")
+print(f"   • 图表输出目录: {PLOTS_DIR}")
+
+if SHAP_AVAILABLE:
+    print(f"   • SHAP可解释性分析图表已生成，提升模型透明度")
+
+print(f"\n⏰ 分析完成时间: {pd.Timestamp.now().strftime('%Y年%m月%d日 %H:%M:%S')}")
+print("\n✅ 法医混合STR图谱NoC智能识别分析完成！")
+print("="*80)
