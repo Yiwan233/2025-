@@ -1311,13 +1311,26 @@ for i, param in enumerate(key_params):
         train_std = np.std(train_scores, axis=1)
         validation_mean = np.mean(validation_scores, axis=1)
         validation_std = np.std(validation_scores, axis=1)
-        
+
+        # 计算95%置信区间所需的标准误
+        n_folds = train_scores.shape[1]  # 获取交叉验证折数
+        train_se = train_std / np.sqrt(n_folds)
+        validation_se = validation_std / np.sqrt(n_folds)
+
+        # 计算95%置信区间宽度
+        z_score = 1.96  # 对应95%置信水平
+        train_ci_width = z_score * train_se
+        validation_ci_width = z_score * validation_se
+
         x_axis = range(len(param_range))
-        
+
+        # 绘制均值性能曲线和置信区间
         axes[i].plot(x_axis, train_mean, 'o-', color='blue', label='训练集')
         axes[i].plot(x_axis, validation_mean, 'o-', color='red', label='验证集')
-        axes[i].fill_between(x_axis, train_mean - train_std, train_mean + train_std, alpha=0.1, color='blue')
-        axes[i].fill_between(x_axis, validation_mean - validation_std, validation_mean + validation_std, alpha=0.1, color='red')
+        axes[i].fill_between(x_axis, train_mean - train_ci_width, train_mean + train_ci_width, 
+                            alpha=0.1, color='blue', label='训练集95%置信区间')
+        axes[i].fill_between(x_axis, validation_mean - validation_ci_width, validation_mean + validation_ci_width, 
+                            alpha=0.1, color='red', label='验证集95%置信区间')
         
         # 设置x轴标签
         axes[i].set_xticks(x_axis)
@@ -1529,10 +1542,20 @@ try:
     val_mean = np.mean(val_scores, axis=1)
     val_std = np.std(val_scores, axis=1)
 
+    # 计算95%置信区间所需的标准误
+    n_folds = train_scores.shape[1]  # 获取交叉验证折数
+    train_se = train_std / np.sqrt(n_folds)
+    validation_se = val_std / np.sqrt(n_folds)
+
+    # 计算95%置信区间宽度
+    z_score = 1.96  # 对应95%置信水平
+    train_ci_width = z_score * train_se
+    validation_ci_width = z_score * validation_se
+
     plt.plot(train_sizes, train_mean, 'o-', color='red', label='训练集')
     plt.plot(train_sizes, val_mean, 'o-', color='green', label='验证集')
-    plt.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.1, color='red')
-    plt.fill_between(train_sizes, val_mean - val_std, val_mean + val_std, alpha=0.1, color='green')
+    plt.fill_between(train_sizes, train_mean - train_ci_width, train_mean + train_ci_width, alpha=0.1, color='red')
+    plt.fill_between(train_sizes, val_mean - validation_ci_width, val_mean + validation_ci_width, alpha=0.1, color='green')
 
     plt.xlabel('训练样本数')
     plt.ylabel('平衡准确率')
@@ -1776,8 +1799,7 @@ print(f"\n🚀 随机森林优化历程:")
 print(f"   • 粗调阶段: {coarse_search.best_score_:.4f}")
 print(f"   • 细调阶段: {fine_search.best_score_:.4f}")
 print(f"   • 最终微调阶段: {final_search.best_score_:.4f}")
-print(f"   • 最终模型参数: {final_params}")
-print(f"   • 测试集准确率: {rf_accuracy:.4f}")
+print(f"   • 最终模型参数: {rf_accuracy:.4f}")
 print(f"   • 平衡准确率: {balanced_acc:.4f}")
 print(f"   • 加权F1分数: {f1_weighted:.4f}")
 print(f"   • 整体预测准确率: {overall_accuracy:.4f}")
