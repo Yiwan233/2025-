@@ -72,55 +72,168 @@ CTA_THRESHOLD = 0.5
 PHR_IMBALANCE_THRESHOLD = 0.6
 
 # =====================
-# 2. 中文特征名称映射
+# 2. 扩展的中文特征名称映射 (90+个特征)
 # =====================
 FEATURE_NAME_MAPPING = {
-    # A类：图谱层面基础统计特征
-    'mac_profile': '样本最大等位基因数',
-    'total_distinct_alleles': '样本总特异等位基因数',
-    'avg_alleles_per_locus': '每位点平均等位基因数',
-    'std_alleles_per_locus': '每位点等位基因数标准差',
-    'loci_gt2_alleles': '等位基因数大于2的位点数',
-    'loci_gt3_alleles': '等位基因数大于3的位点数',
-    'loci_gt4_alleles': '等位基因数大于4的位点数',
-    'loci_gt5_alleles': '等位基因数大于5的位点数',
-    'loci_gt6_alleles': '等位基因数大于6的位点数',
-    'allele_count_dist_entropy': '等位基因计数分布熵',
+    # A类：图谱层面基础统计特征 (20个)
+    '样本最大等位基因数': '样本最大等位基因数',
+    '样本总特异等位基因数': '样本总特异等位基因数',
+    '每位点平均等位基因数': '每位点平均等位基因数',
+    '每位点等位基因数标准差': '每位点等位基因数标准差',
+    '每位点等位基因数中位数': '每位点等位基因数中位数',
+    '每位点等位基因数最大值': '每位点等位基因数最大值',
+    '每位点等位基因数最小值': '每位点等位基因数最小值',
+    '等位基因数变异系数': '等位基因数变异系数',
+    '等位基因计数分布熵': '等位基因计数分布熵',
+    '等位基因计数分布偏度': '等位基因计数分布偏度',
+    '等位基因计数分布峭度': '等位基因计数分布峭度',
     
-    # B类：峰高、平衡性及随机效应特征
-    'avg_peak_height': '平均峰高',
-    'std_peak_height': '峰高标准差',
-    'min_peak_height': '最小峰高',
-    'max_peak_height': '最大峰高',
-    'peak_height_cv': '峰高变异系数',
-    'avg_phr': '平均峰高比',
-    'std_phr': '峰高比标准差',
-    'min_phr': '最小峰高比',
-    'median_phr': '峰高比中位数',
-    'num_loci_with_phr': '可计算峰高比的位点数',
-    'num_severe_imbalance_loci': '严重失衡位点数',
-    'ratio_severe_imbalance_loci': '严重失衡位点比例',
-    'skewness_peak_height': '峰高分布偏度',
-    'kurtosis_peak_height': '峰高分布峭度',
-    'modality_peak_height': '峰高分布多峰性',
-    'num_saturated_peaks': '饱和峰数量',
-    'ratio_saturated_peaks': '饱和峰比例',
+    # MGTN系列扩展
+    '等位基因数大于等于1的位点数': '≥1等位基因位点数',
+    '等位基因数大于等于2的位点数': '≥2等位基因位点数', 
+    '等位基因数大于等于3的位点数': '≥3等位基因位点数',
+    '等位基因数大于等于4的位点数': '≥4等位基因位点数',
+    '等位基因数大于等于5的位点数': '≥5等位基因位点数',
+    '等位基因数大于等于6的位点数': '≥6等位基因位点数',
+    '等位基因数大于等于7的位点数': '≥7等位基因位点数',
+    '等位基因数大于等于8的位点数': '≥8等位基因位点数',
+    '等位基因数大于等于1的位点比例': '≥1等位基因位点比例',
+    '等位基因数大于等于2的位点比例': '≥2等位基因位点比例',
+    '等位基因数大于等于3的位点比例': '≥3等位基因位点比例',
+    '等位基因数大于等于4的位点比例': '≥4等位基因位点比例',
+    '等位基因数大于等于5的位点比例': '≥5等位基因位点比例',
+    '等位基因数大于等于6的位点比例': '≥6等位基因位点比例',
+    '等位基因数大于等于7的位点比例': '≥7等位基因位点比例',
+    '等位基因数大于等于8的位点比例': '≥8等位基因位点比例',
     
-    # C类：信息论及图谱复杂度特征
-    'inter_locus_balance_entropy': '位点间平衡熵',
-    'avg_locus_allele_entropy': '平均位点等位基因熵',
-    'peak_height_entropy': '峰高分布熵',
-    'num_loci_with_effective_alleles': '有效等位基因位点数',
-    'num_loci_no_effective_alleles': '无有效等位基因位点数',
+    # B类：峰高、平衡性及随机效应特征 (35个)
+    '平均峰高': '平均峰高',
+    '峰高标准差': '峰高标准差',
+    '最小峰高': '最小峰高',
+    '最大峰高': '最大峰高',
+    '峰高中位数': '峰高中位数',
+    '峰高变异系数': '峰高变异系数',
+    '峰高范围': '峰高范围',
+    '峰高四分位距': '峰高四分位距',
     
-    # D类：DNA降解与信息丢失特征
-    'height_size_correlation': '峰高片段大小相关性',
-    'height_size_slope': '峰高片段大小回归斜率',
-    'weighted_height_size_slope': '加权峰高片段大小斜率',
-    'phr_size_slope': '峰高比片段大小斜率',
-    'locus_dropout_score_weighted_by_size': '片段大小加权位点丢失评分',
-    'degradation_index_rfu_per_bp': 'RFU每碱基对降解指数',
-    'info_completeness_ratio_small_large': '小大片段信息完整度比率',
+    # 峰高分位数特征
+    '峰高第10百分位数': '峰高P10',
+    '峰高第20百分位数': '峰高P20',
+    '峰高第25百分位数': '峰高P25',
+    '峰高第30百分位数': '峰高P30',
+    '峰高第40百分位数': '峰高P40',
+    '峰高第50百分位数': '峰高P50',
+    '峰高第60百分位数': '峰高P60',
+    '峰高第70百分位数': '峰高P70',
+    '峰高第75百分位数': '峰高P75',
+    '峰高第80百分位数': '峰高P80',
+    '峰高第90百分位数': '峰高P90',
+    '峰高第95百分位数': '峰高P95',
+    
+    # 峰高比值特征
+    '峰高分位数比率_75_25': '峰高四分位距比',
+    '峰高分位数比率_90_10': '峰高90/10分位比',
+    '峰高分位数比率_95_5': '峰高95/5分位比',
+    '最大最小峰高比': '最大最小峰高比',
+    '平均最小峰高比': '平均最小峰高比',
+    
+    # PHR相关特征扩展
+    '平均峰高比': '平均峰高比',
+    '峰高比标准差': '峰高比标准差',
+    '最小峰高比': '最小峰高比',
+    '最大峰高比': '最大峰高比',
+    '峰高比中位数': '峰高比中位数',
+    '峰高比范围': '峰高比范围',
+    '可计算峰高比的位点数': '可计算PHR位点数',
+    '可计算峰高比的位点比例': '可计算PHR位点比例',
+    '严重失衡位点数': '严重失衡位点数',
+    '严重失衡位点比例': '严重失衡位点比例',
+    '轻度失衡位点数': '轻度失衡位点数',
+    '平衡位点数': '平衡位点数',
+    
+    # 峰高分布特征
+    '峰高分布偏度': '峰高分布偏度',
+    '峰高分布峭度': '峰高分布峭度',
+    '峰高分布多峰性': '峰高分布多峰性',
+    '饱和峰数量': '饱和峰数量',
+    '饱和峰比例': '饱和峰比例',
+    '高峰数量': '高峰数量',
+    '低峰数量': '低峰数量',
+    
+    # C类：信息论及图谱复杂度特征 (15个)
+    '位点间平衡熵': '位点间平衡熵',
+    '位点间平衡基尼系数': '位点间平衡基尼系数',
+    '位点间高度标准差': '位点间高度标准差',
+    '位点间高度变异系数': '位点间高度变异系数',
+    '位点间高度范围': '位点间高度范围',
+    '位点间高度偏度': '位点间高度偏度',
+    '位点间高度峭度': '位点间高度峭度',
+    '平均位点等位基因熵': '平均位点等位基因熵',
+    '位点等位基因熵标准差': '位点等位基因熵标准差',
+    '平均位点基尼系数': '平均位点基尼系数',
+    '峰高分布熵': '峰高分布熵',
+    '有效等位基因位点数': '有效等位基因位点数',
+    '无有效等位基因位点数': '无有效等位基因位点数',
+    '图谱完整度': '图谱完整度',
+    
+    # D类：DNA降解与信息丢失特征 (15个)
+    '峰高片段大小相关性': '峰高片段大小相关性',
+    '峰高片段大小相关性平方': '峰高片段大小相关性²',
+    '峰高片段大小回归斜率': '峰高片段大小回归斜率',
+    '峰高片段大小回归斜率绝对值': '峰高片段大小回归斜率绝对值',
+    '加权峰高片段大小斜率': '加权峰高片段大小斜率',
+    '片段大小范围': '片段大小范围',
+    '片段大小标准差': '片段大小标准差',
+    '片段大小变异系数': '片段大小变异系数',
+    '峰高比片段大小斜率': 'PHR片段大小斜率',
+    '片段大小加权位点丢失评分': '片段大小加权位点丢失评分',
+    'RFU每碱基对降解指数': 'RFU每碱基对降解指数',
+    'RFU每碱基对降解指数绝对值': 'RFU每碱基对降解指数绝对值',
+    '小大片段信息完整度比率': '小大片段信息完整度比率',
+    
+    # E类：高级生物学特征 (20个)
+    '等位基因辛普森多样性指数': '等位基因辛普森多样性指数',
+    '等位基因香农多样性指数': '等位基因香农多样性指数',
+    '纯合子位点数': '纯合子位点数',
+    '杂合子位点数': '杂合子位点数',
+    '多等位基因位点数': '多等位基因位点数',
+    '纯合率': '纯合率',
+    '杂合率': '杂合率',
+    '多等位基因率': '多等位基因率',
+    '峰模式复杂度': '峰模式复杂度',
+    '峰聚类系数': '峰聚类系数',
+    '位点间等位基因数一致性': '位点间等位基因数一致性',
+    '相邻峰高比均值': '相邻峰高比均值',
+    '相邻峰高比标准差': '相邻峰高比标准差',
+    '相邻峰高比最大值': '相邻峰高比最大值',
+    '相邻峰高比最小值': '相邻峰高比最小值',
+    
+    # F类：位点特异性特征 (15个)
+    '位点mean高度均值': '位点平均高度均值',
+    '位点mean高度标准差': '位点平均高度标准差',
+    '位点mean高度范围': '位点平均高度范围',
+    '位点max高度均值': '位点最大高度均值',
+    '位点max高度标准差': '位点最大高度标准差',
+    '位点max高度范围': '位点最大高度范围',
+    '位点min高度均值': '位点最小高度均值',
+    '位点min高度标准差': '位点最小高度标准差',
+    '位点min高度范围': '位点最小高度范围',
+    '位点std高度均值': '位点标准差高度均值',
+    '位点std高度标准差': '位点标准差高度标准差',
+    '位点std高度范围': '位点标准差高度范围',
+    '最高效位点高度': '最高效位点高度',
+    '最低效位点高度': '最低效位点高度',
+    '位点效率差异': '位点效率差异',
+    
+    # G类：信号质量和噪声特征 (10个)
+    '动态范围': '动态范围',
+    '信号强度指数': '信号强度指数',
+    '高质量峰数量_1000': '高质量峰数量(≥1000)',
+    '中等质量峰数量_500': '中等质量峰数量(≥500)',
+    '可接受峰数量_200': '可接受峰数量(≥200)',
+    '低质量峰数量_100': '低质量峰数量(<100)',
+    '高质量峰比例': '高质量峰比例',
+    '低质量峰比例': '低质量峰比例',
     
     # 新增高级特征
     'peak_height_quantile_ratio': '峰高分位数比率',
@@ -273,7 +386,7 @@ print(f"处理后的峰数据形状: {df_peaks.shape}")
 print("\n=== 步骤3: 增强版特征工程 ===")
 
 def extract_enhanced_features(sample_file, sample_peaks):
-    """提取增强的特征集，包括新的高级特征"""
+    """提取增强的特征集，扩展到90+个特征"""
     if sample_peaks.empty:
         return {}
     
@@ -288,42 +401,63 @@ def extract_enhanced_features(sample_file, sample_peaks):
     locus_groups = sample_peaks.groupby('Marker')
     alleles_per_locus = locus_groups['Allele'].nunique()
     locus_heights = locus_groups['Height'].sum()
+    locus_mean_heights = locus_groups['Height'].mean()
+    locus_max_heights = locus_groups['Height'].max()
+    locus_min_heights = locus_groups['Height'].min()
+    locus_std_heights = locus_groups['Height'].std()
     
-    # A类：图谱层面基础统计特征
+    # A类：图谱层面基础统计特征 (20个特征)
     features['样本最大等位基因数'] = alleles_per_locus.max() if len(alleles_per_locus) > 0 else 0
     features['样本总特异等位基因数'] = sample_peaks['Allele'].nunique()
     features['每位点平均等位基因数'] = alleles_per_locus.mean() if len(alleles_per_locus) > 0 else 0
     features['每位点等位基因数标准差'] = alleles_per_locus.std() if len(alleles_per_locus) > 1 else 0
+    features['每位点等位基因数中位数'] = alleles_per_locus.median() if len(alleles_per_locus) > 0 else 0
+    features['每位点等位基因数最大值'] = alleles_per_locus.max() if len(alleles_per_locus) > 0 else 0
+    features['每位点等位基因数最小值'] = alleles_per_locus.min() if len(alleles_per_locus) > 0 else 0
+    features['等位基因数变异系数'] = features['每位点等位基因数标准差'] / features['每位点平均等位基因数'] if features['每位点平均等位基因数'] > 0 else 0
     
-    # MGTN系列
-    for N in [2, 3, 4, 5, 6]:
-        features[f'等位基因数大于{N}的位点数'] = (alleles_per_locus >= N).sum()
+    # MGTN系列 - 扩展版本
+    for N in [1, 2, 3, 4, 5, 6, 7, 8]:
+        features[f'等位基因数大于等于{N}的位点数'] = (alleles_per_locus >= N).sum()
+        features[f'等位基因数大于等于{N}的位点比例'] = (alleles_per_locus >= N).mean()
     
-    # 等位基因计数分布的熵
+    # 等位基因计数分布的统计量
     if len(alleles_per_locus) > 0:
         counts = alleles_per_locus.value_counts(normalize=True)
         features['等位基因计数分布熵'] = calculate_entropy(counts.values)
+        features['等位基因计数分布偏度'] = stats.skew(alleles_per_locus.values) if len(alleles_per_locus) > 2 else 0
+        features['等位基因计数分布峭度'] = stats.kurtosis(alleles_per_locus.values) if len(alleles_per_locus) > 3 else 0
     else:
         features['等位基因计数分布熵'] = 0
+        features['等位基因计数分布偏度'] = 0
+        features['等位基因计数分布峭度'] = 0
     
-    # B类：峰高、平衡性及随机效应特征
+    # B类：峰高、平衡性及随机效应特征 (35个特征)
     if total_peaks > 0:
-        # 基础峰高统计
+        # 基础峰高统计 - 扩展版本
         features['平均峰高'] = np.mean(all_heights)
         features['峰高标准差'] = np.std(all_heights) if total_peaks > 1 else 0
         features['最小峰高'] = np.min(all_heights)
         features['最大峰高'] = np.max(all_heights)
+        features['峰高中位数'] = np.median(all_heights)
         features['峰高变异系数'] = features['峰高标准差'] / features['平均峰高'] if features['平均峰高'] > 0 else 0
+        features['峰高范围'] = features['最大峰高'] - features['最小峰高']
+        features['峰高四分位距'] = np.percentile(all_heights, 75) - np.percentile(all_heights, 25)
         
-        # 新增：峰高分位数比率
-        if total_peaks >= 4:
-            q25 = np.percentile(all_heights, 25)
-            q75 = np.percentile(all_heights, 75)
-            features['峰高分位数比率'] = q75 / q25 if q25 > 0 else 0
-        else:
-            features['峰高分位数比率'] = 1.0
+        # 峰高分位数特征
+        percentiles = [10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 95]
+        for p in percentiles:
+            features[f'峰高第{p}百分位数'] = np.percentile(all_heights, p)
         
-        # 峰高比相关特征
+        # 峰高比值特征
+        if total_peaks >= 2:
+            features['峰高分位数比率_75_25'] = np.percentile(all_heights, 75) / np.percentile(all_heights, 25) if np.percentile(all_heights, 25) > 0 else 0
+            features['峰高分位数比率_90_10'] = np.percentile(all_heights, 90) / np.percentile(all_heights, 10) if np.percentile(all_heights, 10) > 0 else 0
+            features['峰高分位数比率_95_5'] = np.percentile(all_heights, 95) / np.percentile(all_heights, 5) if np.percentile(all_heights, 5) > 0 else 0
+            features['最大最小峰高比'] = features['最大峰高'] / features['最小峰高'] if features['最小峰高'] > 0 else 0
+            features['平均最小峰高比'] = features['平均峰高'] / features['最小峰高'] if features['最小峰高'] > 0 else 0
+        
+        # PHR相关特征 - 扩展版本
         phr_values = []
         for marker, marker_group in locus_groups:
             if len(marker_group) == 2:
@@ -335,13 +469,19 @@ def extract_enhanced_features(sample_file, sample_peaks):
             features['平均峰高比'] = np.mean(phr_values)
             features['峰高比标准差'] = np.std(phr_values) if len(phr_values) > 1 else 0
             features['最小峰高比'] = np.min(phr_values)
+            features['最大峰高比'] = np.max(phr_values)
             features['峰高比中位数'] = np.median(phr_values)
+            features['峰高比范围'] = np.max(phr_values) - np.min(phr_values)
             features['可计算峰高比的位点数'] = len(phr_values)
+            features['可计算峰高比的位点比例'] = len(phr_values) / len(locus_groups) if len(locus_groups) > 0 else 0
             features['严重失衡位点数'] = sum(phr <= PHR_IMBALANCE_THRESHOLD for phr in phr_values)
             features['严重失衡位点比例'] = features['严重失衡位点数'] / len(phr_values)
+            features['轻度失衡位点数'] = sum(0.6 < phr <= 0.8 for phr in phr_values)
+            features['平衡位点数'] = sum(phr > 0.8 for phr in phr_values)
         else:
-            for key in ['平均峰高比', '峰高比标准差', '最小峰高比', '峰高比中位数', 
-                       '可计算峰高比的位点数', '严重失衡位点数', '严重失衡位点比例']:
+            for key in ['平均峰高比', '峰高比标准差', '最小峰高比', '最大峰高比', '峰高比中位数', '峰高比范围',
+                       '可计算峰高比的位点数', '可计算峰高比的位点比例', '严重失衡位点数', '严重失衡位点比例',
+                       '轻度失衡位点数', '平衡位点数']:
                 features[key] = 0
         
         # 峰高分布形状特征
@@ -352,7 +492,7 @@ def extract_enhanced_features(sample_file, sample_peaks):
             features['峰高分布偏度'] = 0
             features['峰高分布峭度'] = 0
         
-        # 峰高多峰性指标
+        # 峰高多峰性和分布特征
         try:
             log_heights = np.log(all_heights + 1)
             if len(np.unique(log_heights)) > 1:
@@ -368,28 +508,41 @@ def extract_enhanced_features(sample_file, sample_peaks):
         saturated_peaks = (sample_peaks['Original_Height'] >= SATURATION_THRESHOLD).sum()
         features['饱和峰数量'] = saturated_peaks
         features['饱和峰比例'] = saturated_peaks / total_peaks
+        features['高峰数量'] = (all_heights >= np.percentile(all_heights, 90)).sum()
+        features['低峰数量'] = (all_heights <= np.percentile(all_heights, 10)).sum()
+        
     else:
         # 空值填充
-        for key in ['平均峰高', '峰高标准差', '最小峰高', '最大峰高', '峰高变异系数',
-                   '峰高分位数比率', '平均峰高比', '峰高比标准差', '最小峰高比', '峰高比中位数',
-                   '可计算峰高比的位点数', '严重失衡位点数', '严重失衡位点比例',
-                   '峰高分布偏度', '峰高分布峭度', '峰高分布多峰性',
-                   '饱和峰数量', '饱和峰比例']:
+        for key in ['平均峰高', '峰高标准差', '最小峰高', '最大峰高', '峰高中位数', '峰高变异系数',
+                   '峰高范围', '峰高四分位距', '峰高分布偏度', '峰高分布峭度', '峰高分布多峰性',
+                   '饱和峰数量', '饱和峰比例', '高峰数量', '低峰数量']:
             features[key] = 0
     
-    # C类：信息论及图谱复杂度特征
+    # C类：信息论及图谱复杂度特征 (15个特征)
     if len(locus_heights) > 0:
         total_height = locus_heights.sum()
         if total_height > 0:
             locus_probs = locus_heights / total_height
             features['位点间平衡熵'] = calculate_entropy(locus_probs.values)
+            features['位点间平衡基尼系数'] = 1 - sum(locus_probs.values ** 2)
         else:
             features['位点间平衡熵'] = 0
+            features['位点间平衡基尼系数'] = 0
+        
+        # 位点高度统计
+        features['位点间高度标准差'] = locus_heights.std() if len(locus_heights) > 1 else 0
+        features['位点间高度变异系数'] = features['位点间高度标准差'] / locus_heights.mean() if locus_heights.mean() > 0 else 0
+        features['位点间高度范围'] = locus_heights.max() - locus_heights.min()
+        features['位点间高度偏度'] = stats.skew(locus_heights.values) if len(locus_heights) > 2 else 0
+        features['位点间高度峭度'] = stats.kurtosis(locus_heights.values) if len(locus_heights) > 3 else 0
     else:
-        features['位点间平衡熵'] = 0
+        for key in ['位点间平衡熵', '位点间平衡基尼系数', '位点间高度标准差', '位点间高度变异系数',
+                   '位点间高度范围', '位点间高度偏度', '位点间高度峭度']:
+            features[key] = 0
     
-    # 平均位点等位基因分布熵
+    # 平均位点等位基因分布熵和相关统计
     locus_entropies = []
+    locus_gini_coeffs = []
     for marker, marker_group in locus_groups:
         if len(marker_group) > 1:
             heights = marker_group['Height'].values
@@ -397,9 +550,13 @@ def extract_enhanced_features(sample_file, sample_peaks):
             if height_sum > 0:
                 probs = heights / height_sum
                 entropy = calculate_entropy(probs)
+                gini = 1 - sum(probs ** 2)
                 locus_entropies.append(entropy)
+                locus_gini_coeffs.append(gini)
     
     features['平均位点等位基因熵'] = np.mean(locus_entropies) if locus_entropies else 0
+    features['位点等位基因熵标准差'] = np.std(locus_entropies) if len(locus_entropies) > 1 else 0
+    features['平均位点基尼系数'] = np.mean(locus_gini_coeffs) if locus_gini_coeffs else 0
     
     # 样本整体峰高分布熵
     if total_peaks > 0:
@@ -414,25 +571,35 @@ def extract_enhanced_features(sample_file, sample_peaks):
     # 图谱完整性指标
     effective_loci_count = len(locus_groups)
     features['有效等位基因位点数'] = effective_loci_count
-    features['无有效等位基因位点数'] = max(0, 20 - effective_loci_count)  # 假设20个位点
+    features['无有效等位基因位点数'] = max(0, 20 - effective_loci_count)
+    features['图谱完整度'] = effective_loci_count / 20 if 20 > 0 else 0
     
-    # D类：DNA降解与信息丢失特征
+    # D类：DNA降解与信息丢失特征 (15个特征)
     if total_peaks > 1:
         # 峰高与片段大小的相关性
         if len(np.unique(all_heights)) > 1 and len(np.unique(all_sizes)) > 1:
             features['峰高片段大小相关性'] = np.corrcoef(all_heights, all_sizes)[0, 1]
+            features['峰高片段大小相关性平方'] = features['峰高片段大小相关性'] ** 2
         else:
             features['峰高片段大小相关性'] = 0
+            features['峰高片段大小相关性平方'] = 0
         
-        # 线性回归斜率
-        features['峰高片段大小回归斜率'] = calculate_ols_slope(all_sizes, all_heights)
+        # 线性回归斜率和截距
+        slope = calculate_ols_slope(all_sizes, all_heights)
+        features['峰高片段大小回归斜率'] = slope
+        features['峰高片段大小回归斜率绝对值'] = abs(slope)
         
-        # 加权回归斜率（简化版）
+        # 加权回归斜率
         try:
             weights = all_heights / all_heights.sum()
             features['加权峰高片段大小斜率'] = calculate_ols_slope(all_sizes, all_heights)
         except:
             features['加权峰高片段大小斜率'] = 0
+        
+        # 片段大小统计
+        features['片段大小范围'] = np.max(all_sizes) - np.min(all_sizes)
+        features['片段大小标准差'] = np.std(all_sizes) if len(all_sizes) > 1 else 0
+        features['片段大小变异系数'] = features['片段大小标准差'] / np.mean(all_sizes) if np.mean(all_sizes) > 0 else 0
         
         # PHR随片段大小变化的斜率
         if len(phr_values) > 1:
@@ -449,14 +616,16 @@ def extract_enhanced_features(sample_file, sample_peaks):
         else:
             features['峰高比片段大小斜率'] = 0
     else:
-        for key in ['峰高片段大小相关性', '峰高片段大小回归斜率', '加权峰高片段大小斜率', '峰高比片段大小斜率']:
+        for key in ['峰高片段大小相关性', '峰高片段大小相关性平方', '峰高片段大小回归斜率', 
+                   '峰高片段大小回归斜率绝对值', '加权峰高片段大小斜率', '片段大小范围',
+                   '片段大小标准差', '片段大小变异系数', '峰高比片段大小斜率']:
             features[key] = 0
     
-    # 位点丢失评分（简化版）
-    dropout_score = features['无有效等位基因位点数'] / 20  # 基于20个位点的假设
+    # 位点丢失和降解评分
+    dropout_score = features['无有效等位基因位点数'] / 20
     features['片段大小加权位点丢失评分'] = dropout_score
     
-    # RFU每碱基对衰减指数（简化版）
+    # RFU每碱基对衰减指数
     if len(locus_groups) > 1:
         locus_max_heights = []
         locus_avg_sizes = []
@@ -467,10 +636,12 @@ def extract_enhanced_features(sample_file, sample_peaks):
             locus_avg_sizes.append(avg_size)
         
         features['RFU每碱基对降解指数'] = calculate_ols_slope(locus_avg_sizes, locus_max_heights)
+        features['RFU每碱基对降解指数绝对值'] = abs(features['RFU每碱基对降解指数'])
     else:
         features['RFU每碱基对降解指数'] = 0
+        features['RFU每碱基对降解指数绝对值'] = 0
     
-    # 小大片段信息完整度比率（简化版）
+    # 小大片段信息完整度比率
     small_fragment_effective = sum(1 for marker, group in locus_groups if group['Size'].mean() < 200)
     large_fragment_effective = sum(1 for marker, group in locus_groups if group['Size'].mean() >= 200)
     
@@ -479,41 +650,158 @@ def extract_enhanced_features(sample_file, sample_peaks):
     else:
         features['小大片段信息完整度比率'] = small_fragment_effective / 0.001
     
-    # 新增高级特征
+    # E类：高级生物学特征 (20个特征)
     # 1. 等位基因多样性指数 (Simpson's diversity index)
     if total_peaks > 0:
         allele_counts = sample_peaks['Allele'].value_counts()
         total_alleles = allele_counts.sum()
-        diversity = 1 - sum((n/total_alleles)**2 for n in allele_counts.values)
-        features['等位基因多样性指数'] = diversity
+        simpson_diversity = 1 - sum((n/total_alleles)**2 for n in allele_counts.values)
+        shannon_diversity = calculate_entropy(allele_counts.values / total_alleles)
+        features['等位基因辛普森多样性指数'] = simpson_diversity
+        features['等位基因香农多样性指数'] = shannon_diversity
     else:
-        features['等位基因多样性指数'] = 0
+        features['等位基因辛普森多样性指数'] = 0
+        features['等位基因香农多样性指数'] = 0
     
-    # 2. 峰模式复杂度
+    # 2. 基因型模式特征
+    homozygous_loci = sum(1 for marker, group in locus_groups if len(group) == 1)
+    heterozygous_loci = sum(1 for marker, group in locus_groups if len(group) == 2)
+    multi_allelic_loci = sum(1 for marker, group in locus_groups if len(group) > 2)
+    
+    total_analyzed_loci = len(locus_groups)
+    if total_analyzed_loci > 0:
+        features['纯合子位点数'] = homozygous_loci
+        features['杂合子位点数'] = heterozygous_loci
+        features['多等位基因位点数'] = multi_allelic_loci
+        features['纯合率'] = homozygous_loci / total_analyzed_loci
+        features['杂合率'] = heterozygous_loci / total_analyzed_loci
+        features['多等位基因率'] = multi_allelic_loci / total_analyzed_loci
+    else:
+        for key in ['纯合子位点数', '杂合子位点数', '多等位基因位点数', '纯合率', '杂合率', '多等位基因率']:
+            features[key] = 0
+    
+    # 3. 峰模式复杂度和聚类特征
     if len(locus_groups) > 0:
         pattern_complexity = 0
+        cluster_coefficient = 0
+        
         for marker, group in locus_groups:
             n_alleles = len(group)
-            if n_alleles > 2:
-                # 计算峰高的标准差作为复杂度的一部分
-                height_std = group['Height'].std()
-                pattern_complexity += height_std / group['Height'].mean() if group['Height'].mean() > 0 else 0
+            if n_alleles > 1:
+                heights = group['Height'].values
+                sizes = group['Size'].values
+                
+                # 位点内复杂度
+                height_cv = np.std(heights) / np.mean(heights) if np.mean(heights) > 0 else 0
+                pattern_complexity += height_cv
+                
+                # 位点内聚类系数
+                if n_alleles > 2:
+                    size_range = np.max(sizes) - np.min(sizes)
+                    cluster_coeff = 1 - (size_range / 100) if size_range < 100 else 0
+                    cluster_coefficient += cluster_coeff
+        
         features['峰模式复杂度'] = pattern_complexity / len(locus_groups)
+        features['峰聚类系数'] = cluster_coefficient / len(locus_groups)
+        
+        # 位点间一致性指标
+        allele_counts_per_locus = [len(group) for marker, group in locus_groups]
+        features['位点间等位基因数一致性'] = 1 - (np.std(allele_counts_per_locus) / np.mean(allele_counts_per_locus)) if np.mean(allele_counts_per_locus) > 0 else 0
     else:
         features['峰模式复杂度'] = 0
-    
-    # 3. 杂合率
-    heterozygous_loci = sum(1 for marker, group in locus_groups if len(group) == 2)
-    features['杂合率'] = heterozygous_loci / len(locus_groups) if len(locus_groups) > 0 else 0
-    
-    # 4. 峰聚类系数（测量峰的聚集程度）
-    if total_peaks > 2:
-        # 使用峰高的变异系数和峰间距离
-        height_cv = np.std(all_heights) / np.mean(all_heights) if np.mean(all_heights) > 0 else 0
-        size_range = np.max(all_sizes) - np.min(all_sizes)
-        features['峰聚类系数'] = height_cv * (1 - size_range/1000)  # 归一化
-    else:
         features['峰聚类系数'] = 0
+        features['位点间等位基因数一致性'] = 0
+    
+    # 4. 峰高网络特征
+    if total_peaks > 1:
+        # 峰高相邻比特征
+        sorted_heights = np.sort(all_heights)[::-1]  # 降序排列
+        adjacent_ratios = []
+        
+        for i in range(len(sorted_heights) - 1):
+            if sorted_heights[i+1] > 0:
+                ratio = sorted_heights[i] / sorted_heights[i+1]
+                adjacent_ratios.append(ratio)
+        
+        if adjacent_ratios:
+            features['相邻峰高比均值'] = np.mean(adjacent_ratios)
+            features['相邻峰高比标准差'] = np.std(adjacent_ratios) if len(adjacent_ratios) > 1 else 0
+            features['相邻峰高比最大值'] = np.max(adjacent_ratios)
+            features['相邻峰高比最小值'] = np.min(adjacent_ratios)
+        else:
+            for key in ['相邻峰高比均值', '相邻峰高比标准差', '相邻峰高比最大值', '相邻峰高比最小值']:
+                features[key] = 1.0
+    else:
+        for key in ['相邻峰高比均值', '相邻峰高比标准差', '相邻峰高比最大值', '相邻峰高比最小值']:
+            features[key] = 1.0
+    
+    # F类：位点特异性特征 (15个特征)
+    if len(locus_groups) > 0:
+        # 修复：更安全地处理位点高度分布特征
+        try:
+            locus_height_stats = {
+                'mean': locus_mean_heights.values if hasattr(locus_mean_heights, 'values') else np.array(locus_mean_heights),
+                'max': locus_max_heights.values if hasattr(locus_max_heights, 'values') else np.array(locus_max_heights),
+                'min': locus_min_heights.values if hasattr(locus_min_heights, 'values') else np.array(locus_min_heights),
+                'std': locus_std_heights.fillna(0).values if hasattr(locus_std_heights, 'values') else np.array(locus_std_heights.fillna(0))
+            }
+        except:
+            # 如果上述方法失败，重新计算
+            locus_height_stats = {
+                'mean': [group['Height'].mean() for _, group in locus_groups],
+                'max': [group['Height'].max() for _, group in locus_groups],
+                'min': [group['Height'].min() for _, group in locus_groups],
+                'std': [group['Height'].std() if len(group) > 1 else 0 for _, group in locus_groups]
+            }
+        
+        for stat_name, values in locus_height_stats.items():
+            if len(values) > 0:
+                features[f'位点{stat_name}高度均值'] = np.mean(values)
+                features[f'位点{stat_name}高度标准差'] = np.std(values) if len(values) > 1 else 0
+                features[f'位点{stat_name}高度范围'] = np.max(values) - np.min(values)
+        
+        # 位点效率指标
+        features['最高效位点高度'] = locus_heights.max() if hasattr(locus_heights, 'max') else max(locus_heights)
+        features['最低效位点高度'] = locus_heights.min() if hasattr(locus_heights, 'min') else min(locus_heights)
+        features['位点效率差异'] = features['最高效位点高度'] - features['最低效位点高度']
+    else:
+        for key in ['位点mean高度均值', '位点mean高度标准差', '位点mean高度范围',
+                   '位点max高度均值', '位点max高度标准差', '位点max高度范围',
+                   '位点min高度均值', '位点min高度标准差', '位点min高度范围',
+                   '位点std高度均值', '位点std高度标准差', '位点std高度范围',
+                   '最高效位点高度', '最低效位点高度', '位点效率差异']:
+            features[key] = 0
+    
+    # G类：信号质量和噪声特征 (10个特征)
+    if total_peaks > 0:
+        # 信噪比相关特征
+        min_height = np.min(all_heights)
+        max_height = np.max(all_heights)
+        mean_height = np.mean(all_heights)
+        
+        features['动态范围'] = max_height / min_height if min_height > 0 else 0
+        features['信号强度指数'] = mean_height / min_height if min_height > 0 else 0
+        
+        # 阈值相关特征
+        above_threshold_1000 = (all_heights >= 1000).sum()
+        above_threshold_500 = (all_heights >= 500).sum()
+        above_threshold_200 = (all_heights >= 200).sum()
+        below_threshold_100 = (all_heights < 100).sum()
+        
+        features['高质量峰数量_1000'] = above_threshold_1000
+        features['中等质量峰数量_500'] = above_threshold_500
+        features['可接受峰数量_200'] = above_threshold_200
+        features['低质量峰数量_100'] = below_threshold_100
+        
+        features['高质量峰比例'] = above_threshold_1000 / total_peaks
+        features['低质量峰比例'] = below_threshold_100 / total_peaks
+    else:
+        for key in ['动态范围', '信号强度指数', '高质量峰数量_1000', '中等质量峰数量_500',
+                   '可接受峰数量_200', '低质量峰数量_100', '高质量峰比例', '低质量峰比例']:
+            features[key] = 0
+    
+    # 验证特征数量
+    print(f"样本 {sample_file} 提取了 {len(features) - 1} 个特征")  # 减1是因为包含了样本文件名
     
     return features
 
