@@ -1,0 +1,14 @@
+{
+  "sample_id": "A02_RD14-0003-40_41-1;4-M3S30-0.075IP-Q4.0_001.5sec.fsa",
+  "predicted_noc": 2,
+  "noc_confidence": 0.5,
+  "posterior_summary": {
+    "AMEL": {
+      "contributor_1": {
+        "mode_genotype": [
+          "Y",
+          "X"
+        ],
+        "mode_probability": 0.44223555888972244,
+        "posterior_distribution": {
+          
