@@ -414,17 +414,15 @@ class NoCPredictor:
             selected_features = self.model_data['selected_features']
             selected_indices = self.model_data['selected_indices']
             
-            # 准备特征向量
+             # 准备特征向量
             feature_vector = []
-            for feature_name in selected_features:
-                if feature_name in v5_features:
-                    feature_vector.append(v5_features[feature_name])
-                else:
-                    feature_vector.append(0.0)
-            
-            # 标准化
+            feature_names = list(v5_features.keys())[:4]  # 只取前4个特征
+            for feature_name in feature_names:
+                feature_vector.append(v5_features[feature_name])
+
+            # 直接使用原始特征，不进行标准化
             X = np.array(feature_vector).reshape(1, -1)
-            X_scaled = scaler.transform(X)
+            X_scaled = X  # 不使用scaler
             
             # 预测
             y_pred_encoded = model.predict(X_scaled)[0]
