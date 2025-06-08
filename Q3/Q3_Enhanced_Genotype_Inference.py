@@ -59,6 +59,10 @@ class Config:
     ATTACHMENT3_PATH = os.path.join(DATA_DIR, '附件3：各个贡献者的基因型.csv')
     OUTPUT_DIR = os.path.join(DATA_DIR, 'q3_enhanced_results')
     Q1_MODEL_PATH = os.path.join(DATA_DIR, 'noc_optimized_random_forest_model.pkl')
+    # 样本文件名解析参数
+    SAMPLE_NAME_PATTERN = r'-(\d+(?:_\d+)*)-[\d;]+-(\d+(?:;\d+)*)-'  # 提取贡献者ID和比例
+    CONTRIBUTOR_SEPARATOR = '_'  # 贡献者ID分隔符
+    RATIO_SEPARATOR = ';'        # 混合比例分隔符
     
     # STR分析参数
     HEIGHT_THRESHOLD = 50
@@ -79,6 +83,95 @@ class Config:
 
 config = Config()
 os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+
+class SampleFileParser:
+    """样本文件名解析器，提取贡献者信息和混合比例"""
+    
+    def __init__(self):
+        logger.info("样本文件名解析器初始化完成")
+    
+    def parse_sample_filename(self, filename: str) -> Dict:
+        """
+        解析样本文件名，提取贡献者信息和混合比例
+        
+        例如：A02_RD14-0003-40_41-1;4-M3S30-0.075IP-Q4.0_001.5sec.fsa
+        提取：贡献者ID=[40, 41], 混合比例=[1, 4] -> [0.2, 0.8]
+        """
+        result = {
+            'contributor_ids': [],
+            'raw_ratios': [],
+            'normalized_ratios': [],
+            'noc_from_filename': 0,
+            'parsing_success': False
+        }
+        
+        try:
+            # 使用正则表达式提取贡献者ID和比例
+            pattern = config.SAMPLE_NAME_PATTERN
+            match = re.search(pattern, filename)
+            
+            if match:
+                # 提取贡献者ID
+                contributor_part = match.group(1)
+                contributor_ids = contributor_part.split(config.CONTRIBUTOR_SEPARATOR)
+                result['contributor_ids'] = [int(cid) for cid in contributor_ids if cid.isdigit()]
+                
+                # 提取混合比例
+                ratio_part = match.group(2)
+                raw_ratios = ratio_part.split(config.RATIO_SEPARATOR)
+                result['raw_ratios'] = [float(ratio) for ratio in raw_ratios if ratio.replace('.', '').isdigit()]
+                
+                # 标准化混合比例
+                if result['raw_ratios']:
+                    total_ratio = sum(result['raw_ratios'])
+                    result['normalized_ratios'] = [r / total_ratio for r in result['raw_ratios']]
+                
+                # 验证一致性
+                if len(result['contributor_ids']) == len(result['raw_ratios']):
+                    result['noc_from_filename'] = len(result['contributor_ids'])
+                    result['parsing_success'] = True
+                    
+                    logger.debug(f"成功解析文件名 {filename}:")
+                    logger.debug(f"  贡献者ID: {result['contributor_ids']}")
+                    logger.debug(f"  原始比例: {result['raw_ratios']}")
+                    logger.debug(f"  标准化比例: {result['normalized_ratios']}")
+                else:
+                    logger.warning(f"文件名 {filename} 中贡献者数量与比例数量不匹配")
+            else:
+                logger.warning(f"无法解析文件名格式: {filename}")
+                
+        except Exception as e:
+            logger.error(f"解析文件名 {filename} 时出错: {e}")
+        
+        return result
+    
+    def get_contributor_mapping(self, sample_id: str, att3_processor: 'Attachment3Processor') -> Dict:
+        """
+        获取文件名中贡献者ID与附件3中贡献者的映射关系
+        """
+        parsing_result = self.parse_sample_filename(sample_id)
+        
+        if not parsing_result['parsing_success']:
+            return {}
+        
+        mapping = {}
+        if att3_processor:
+            # 获取附件3中该样本的贡献者
+            att3_contributors = att3_processor.get_contributors_for_sample(sample_id)
+            filename_contributors = parsing_result['contributor_ids']
+            
+            # 建立映射关系（假设按顺序对应）
+            for i, (att3_contrib, filename_id, ratio) in enumerate(zip(
+                att3_contributors, filename_contributors, parsing_result['normalized_ratios']
+            )):
+                mapping[f'position_{i+1}'] = {
+                    'att3_contributor_id': att3_contrib,
+                    'filename_contributor_id': filename_id,
+                    'expected_ratio': ratio,
+                    'contributor_rank': i + 1
+                }
+        
+        return mapping
 
 # =====================
 # 2. 继承Q1和Q2的核心组件
@@ -1199,30 +1292,71 @@ class GenotypeMatchEvaluator:
         
         return evaluation_results
     
+    def evaluate_mixture_ratio_accuracy(self, filename_info: Dict, 
+                                   mcmc_results: Dict) -> Dict:
+        """评估混合比例推断的准确性"""
+        if not filename_info['parsing_success'] or not mcmc_results['samples']['mixture_ratios']:
+            return {'error': 'Insufficient data for mixture ratio evaluation'}
+        
+        expected_ratios = np.array(filename_info['normalized_ratios'])
+        inferred_samples = np.array(mcmc_results['samples']['mixture_ratios'])
+        
+        # 计算后验均值
+        inferred_mean = np.mean(inferred_samples, axis=0)
+        
+        # 需要处理标签切换问题（Label Switching）
+        # 找出最佳匹配排列
+        from itertools import permutations
+        min_distance = float('inf')
+        best_permutation = None
+        
+        for perm in permutations(range(len(inferred_mean))):
+            reordered_inferred = inferred_mean[list(perm)]
+            distance = np.sum((expected_ratios - reordered_inferred) ** 2)
+            if distance < min_distance:
+                min_distance = distance
+                best_permutation = perm
+        
+        # 重新排序推断结果
+        best_inferred = inferred_mean[list(best_permutation)]
+        
+        # 计算评估指标
+        mae = np.mean(np.abs(expected_ratios - best_inferred))  # 平均绝对误差
+        rmse = np.sqrt(np.mean((expected_ratios - best_inferred) ** 2))  # 均方根误差
+        
+        return {
+            'expected_ratios': expected_ratios.tolist(),
+            'inferred_ratios': best_inferred.tolist(),
+            'best_permutation': best_permutation,
+            'mae': mae,
+            'rmse': rmse,
+            'max_absolute_error': np.max(np.abs(expected_ratios - best_inferred))
+        }
+        
     def _calculate_posterior_mode_genotypes(self, genotype_samples: List[Dict], 
-                                          observed_loci: List[str]) -> Dict[str, Dict[str, Tuple[str, str]]]:
-        """计算后验众数基因型"""
-        posterior_genotypes = {}
-        
-        for locus in observed_loci:
-            locus_genotype_counts = defaultdict(lambda: defaultdict(int))
+                                            observed_loci: List[str]) -> Dict[str, Dict[str, Tuple[str, str]]]:
+            """计算后验众数基因型"""
+            posterior_genotypes = {}
             
-            # 统计每个贡献者在每个位点的基因型频次
-            for sample in genotype_samples:
-                if locus in sample:
-                    genotype_set = sample[locus]
-                    for i, genotype in enumerate(genotype_set):
-                        if genotype is not None:
-                            locus_genotype_counts[i][genotype] += 1
+            for locus in observed_loci:
+                locus_genotype_counts = defaultdict(lambda: defaultdict(int))
+                
+                # 统计每个贡献者在每个位点的基因型频次
+                for sample in genotype_samples:
+                    if locus in sample:
+                        genotype_set = sample[locus]
+                        for i, genotype in enumerate(genotype_set):
+                            if genotype is not None:
+                                locus_genotype_counts[i][genotype] += 1
+                
+                # 找出每个贡献者的众数基因型
+                posterior_genotypes[locus] = {}
+                for contributor_idx, genotype_counts in locus_genotype_counts.items():
+                    if genotype_counts:
+                        mode_genotype = max(genotype_counts.items(), key=lambda x: x[1])[0]
+                        posterior_genotypes[locus][contributor_idx] = mode_genotype
             
-            # 找出每个贡献者的众数基因型
-            posterior_genotypes[locus] = {}
-            for contributor_idx, genotype_counts in locus_genotype_counts.items():
-                if genotype_counts:
-                    mode_genotype = max(genotype_counts.items(), key=lambda x: x[1])[0]
-                    posterior_genotypes[locus][contributor_idx] = mode_genotype
-        
-        return posterior_genotypes
+            return posterior_genotypes
     
     def _calculate_genotype_concordance_rate(self, true_genotypes: Dict, 
                                            posterior_genotypes: Dict, 
@@ -1498,7 +1632,7 @@ class Q3EnhancedPipeline:
         self.mcmc_inferencer = EnhancedMCMCGenotypeInferencer(q1_model_path, self.att3_processor)
         self.match_evaluator = GenotypeMatchEvaluator(self.att3_processor) if self.att3_processor else None
         self.q1_feature_engineering = Q1FeatureEngineering()
-        
+        self.sample_parser = SampleFileParser()  # 添加这行
         logger.info("Q3增强分析流水线初始化完成")
     
     def load_data(self, att1_path: str = None, att2_path: str = None):
@@ -1519,7 +1653,11 @@ class Q3EnhancedPipeline:
     
     def analyze_single_sample(self, sample_id: str, att1_or_att2_data: pd.DataFrame) -> Dict:
         """分析单个样本的基因型"""
+        sample_id = att1_or_att2_data.iloc[0]['Sample File']
         logger.info(f"开始分析样本: {sample_id}")
+        
+        filename_info = self.sample_parser.parse_sample_filename(sample_id)
+        contributor_mapping = self.sample_parser.get_contributor_mapping(sample_id, self.att3_processor)
         
         # 步骤1: 预测NoC和提取V5特征
         predicted_noc, noc_confidence, v5_features = self.mcmc_inferencer.predict_noc_from_sample(att1_or_att2_data)
@@ -1571,6 +1709,8 @@ class Q3EnhancedPipeline:
             'predicted_noc': predicted_noc,
             'noc_confidence': noc_confidence,
             'v5_features': v5_features,
+            'filename_parsing': filename_info,        # 添加
+            'contributor_mapping': contributor_mapping,
             'mcmc_results': mcmc_results,
             'posterior_summary': posterior_summary,
             'evaluation_results': evaluation_results,
@@ -2156,6 +2296,19 @@ def print_sample_summary_q3(result: Dict):
                         mode_gt = contrib_data['mode_genotype']
                         mode_prob = contrib_data['mode_probability']
                         print(f"    {contributor}: {mode_gt[0]},{mode_gt[1]} (prob={mode_prob:.3f})")
+    
+    if 'filename_parsing' in result and result['filename_parsing']['parsing_success']:
+        filename_info = result['filename_parsing']
+        print(f"  文件名解析:")
+        print(f"    贡献者ID: {filename_info['contributor_ids']}")
+        print(f"    真实混合比例: {[f'{r:.3f}' for r in filename_info['normalized_ratios']]}")
+        print(f"    文件名中NoC: {filename_info['noc_from_filename']}")
+        
+        # 如果有混合比例评估结果
+        if 'mixture_ratio_evaluation' in result and 'mae' in result['mixture_ratio_evaluation']:
+            ratio_eval = result['mixture_ratio_evaluation']
+            print(f"    混合比例MAE: {ratio_eval['mae']:.3f}")
+            print(f"    推断混合比例: {[f'{r:.3f}' for r in ratio_eval['inferred_ratios']]}")
     
     # 打印评估结果（如果有）
     if result['evaluation_results'] and 'overall_summary' in result['evaluation_results']:
