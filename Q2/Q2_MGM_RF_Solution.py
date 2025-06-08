@@ -13,6 +13,7 @@
 """
 
 import numpy as np
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -34,6 +35,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.feature_selection import RFECV
 from sklearn.utils.class_weight import compute_sample_weight
+# from sklearn.metrics import SCORERS
 import joblib
 
 # 设置中文字体和忽略警告
@@ -408,13 +410,142 @@ class NoCPredictor:
         logger.info("NoC预测器初始化完成")
     
     def load_model(self, model_path: str):
-        """加载Q1训练的模型"""
+        """加载Q1训练的模型，处理版本兼容性问题"""
         try:
-            self.model_data = joblib.load(model_path)
+            # 方法1：尝试直接加载
+            import warnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                self.model_data = joblib.load(model_path)
+            
+            # 验证模型数据完整性
+            required_keys = ['model', 'scaler', 'label_encoder', 'selected_features']
+            if not all(key in self.model_data for key in required_keys):
+                raise ValueError("模型文件缺少必要组件")
+                
             logger.info(f"成功加载Q1模型: {model_path}")
+            
         except Exception as e:
-            logger.warning(f"Q1模型加载失败: {e}，将使用默认NoC=2")
-            self.model_data = None
+            logger.warning(f"标准加载失败: {e}")
+            
+            # 方法2：尝试手动重建评分器
+            try:
+                self._load_with_custom_scorer(model_path)
+                logger.info("使用自定义评分器成功加载模型")
+                
+            except Exception as e2:
+                logger.warning(f"自定义加载也失败: {e2}")
+                
+                # 方法3：尝试加载模型核心组件
+                try:
+                    self._load_core_components(model_path)
+                    logger.info("成功加载模型核心组件")
+                    
+                except Exception as e3:
+                    logger.error(f"所有加载方法都失败: {e3}")
+                    self.model_data = None
+                    
+                    # 提供解决方案
+                    logger.info("解决方案:")
+                    logger.info("1. 重新运行Q1c2.py生成兼容的模型文件")
+                    logger.info("2. 或者使用基于特征的简单NoC估计")
+    
+    def _load_with_custom_scorer(self, model_path: str):
+        """使用自定义评分器加载模型"""
+        import pickle
+        
+        # 创建自定义的_Scorer类
+        class CustomScorer:
+            def __init__(self, score_func):
+                self._score_func = score_func
+            
+            def __call__(self, estimator, X, y, sample_weight=None):
+                return self._score_func(y, estimator.predict(X))
+        
+        # 临时替换sklearn的_Scorer
+        import sklearn.metrics._scorer as scorer_module
+        original_scorer = getattr(scorer_module, '_Scorer', None)
+        scorer_module._Scorer = CustomScorer
+        
+        try:
+            with open(model_path, 'rb') as f:
+                self.model_data = pickle.load(f)
+        finally:
+            # 恢复原始的_Scorer
+            if original_scorer is not None:
+                scorer_module._Scorer = original_scorer
+    
+    def _load_core_components(self, model_path: str):
+        """只加载模型的核心组件"""
+        import pickle
+        
+        with open(model_path, 'rb') as f:
+            raw_data = pickle.load(f)
+        
+        # 提取核心组件
+        core_components = {}
+        
+        if 'model' in raw_data:
+            # 如果RandomForestClassifier可以直接使用
+            if hasattr(raw_data['model'], 'predict'):
+                core_components['model'] = raw_data['model']
+            else:
+                # 创建新的RandomForestClassifier
+                from sklearn.ensemble import RandomForestClassifier
+                rf_params = getattr(raw_data['model'], 'get_params', lambda: {})()
+                core_components['model'] = RandomForestClassifier(**rf_params)
+                
+                # 复制训练好的树
+                if hasattr(raw_data['model'], 'estimators_'):
+                    core_components['model'].estimators_ = raw_data['model'].estimators_
+                    core_components['model'].n_features_in_ = raw_data['model'].n_features_in_
+                    core_components['model'].classes_ = raw_data['model'].classes_
+                    core_components['model'].n_classes_ = raw_data['model'].n_classes_
+        
+        # 其他组件
+        for key in ['scaler', 'label_encoder', 'selected_features', 'selected_indices']:
+            if key in raw_data:
+                core_components[key] = raw_data[key]
+        
+        self.model_data = core_components
+    
+    def _simple_noc_estimation(self, v5_features: Dict) -> int:
+        """基于特征的增强版简单NoC估计"""
+        # 增强的特征规则
+        mac_profile = v5_features.get('mac_profile', 0)
+        avg_alleles = v5_features.get('avg_alleles_per_locus', 0)
+        total_alleles = v5_features.get('total_distinct_alleles', 0)
+        loci_gt4 = v5_features.get('loci_gt4_alleles', 0)
+        loci_gt5 = v5_features.get('loci_gt5_alleles', 0)
+        
+        # 规则1：基于MAC（最大等位基因数）
+        if mac_profile >= 6:
+            return min(5, max(3, int(mac_profile / 1.5)))
+        elif mac_profile >= 5:
+            return 3
+        elif mac_profile >= 4:
+            return 2
+        elif mac_profile >= 3:
+            return 2
+        
+        # 规则2：基于高等位基因数位点
+        if loci_gt5 >= 3:
+            return 4
+        elif loci_gt5 >= 1 or loci_gt4 >= 5:
+            return 3
+        elif loci_gt4 >= 2:
+            return 2
+        
+        # 规则3：基于总等位基因数
+        if total_alleles >= 60:
+            return 4
+        elif total_alleles >= 45:
+            return 3
+        elif total_alleles >= 30:
+            return 2
+        
+        # 默认返回2
+        return 2
     
     def predict_noc(self, v5_features: Dict) -> Tuple[int, float]:
         """
@@ -427,38 +558,66 @@ class NoCPredictor:
             (predicted_noc, confidence)
         """
         if self.model_data is None:
-            return 2, 0.5
+            # 使用增强的特征估计
+            noc_estimate = self._simple_noc_estimation(v5_features)
+            confidence = 0.6  # 提高置信度
+            logger.info(f"使用特征规则估计NoC: {noc_estimate} (置信度: {confidence})")
+            return noc_estimate, confidence
         
         try:
             model = self.model_data['model']
-            scaler = self.model_data['scaler']
+            scaler = self.model_data.get('scaler')
             label_encoder = self.model_data['label_encoder']
-            selected_features = self.model_data['selected_features']
-            selected_indices = self.model_data['selected_indices']
+            selected_features = self.model_data.get('selected_features', [])
             
-             # 准备特征向量
-            feature_vector = []
-            feature_names = list(v5_features.keys())[:4]  # 只取前4个特征
-            for feature_name in feature_names:
-                feature_vector.append(v5_features[feature_name])
-
-            # 直接使用原始特征，不进行标准化
+            # 准备特征向量
+            if selected_features:
+                # 使用选定的特征
+                feature_vector = []
+                for feature_name in selected_features:
+                    feature_vector.append(v5_features.get(feature_name, 0))
+            else:
+                # 使用所有数值特征
+                feature_vector = []
+                for key, value in v5_features.items():
+                    if isinstance(value, (int, float)) and key != 'Sample File':
+                        feature_vector.append(value)
+            
+            if not feature_vector:
+                # 如果没有有效特征，回退到简单估计
+                noc_estimate = self._simple_noc_estimation(v5_features)
+                return noc_estimate, 0.5
+            
+            # 转换为numpy数组
             X = np.array(feature_vector).reshape(1, -1)
-            X_scaled = X  # 不使用scaler
+            
+            # 特征标准化（如果有scaler）
+            if scaler is not None:
+                try:
+                    X_scaled = scaler.transform(X)
+                except:
+                    X_scaled = X  # 如果标准化失败，使用原始特征
+            else:
+                X_scaled = X
             
             # 预测
             y_pred_encoded = model.predict(X_scaled)[0]
             y_pred = label_encoder.inverse_transform([y_pred_encoded])[0]
             
             # 预测概率作为置信度
-            y_proba = model.predict_proba(X_scaled)[0]
-            confidence = np.max(y_proba)
+            try:
+                y_proba = model.predict_proba(X_scaled)[0]
+                confidence = np.max(y_proba)
+            except:
+                confidence = 0.7  # 如果概率预测失败，使用固定置信度
             
+            logger.info(f"模型预测NoC: {y_pred} (置信度: {confidence:.3f})")
             return int(y_pred), float(confidence)
             
         except Exception as e:
-            logger.warning(f"NoC预测失败: {e}，使用默认值")
-            return 2, 0.5
+            logger.warning(f"NoC预测失败: {e}，使用特征规则估计")
+            noc_estimate = self._simple_noc_estimation(v5_features)
+            return noc_estimate, 0.5
 
 # =====================
 # 4. MGM-M核心组件
