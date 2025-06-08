@@ -878,13 +878,22 @@ class MGM_RF_Inferencer:
         sample_file = sample_data.iloc[0]['Sample File']
         v5_features = self.q1_feature_engineering.extract_v5_features(sample_file, sample_peaks)
         
-        # 预测NoC
-        if self.noc_predictor:
-            predicted_noc, confidence = self.noc_predictor.predict_noc(v5_features)
-        else:
-            predicted_noc, confidence = 2, 0.5
+        # 直接从文件名提取NoC
+        predicted_noc = self.q1_feature_engineering.extract_noc_from_filename(sample_file)
         
-        logger.info(f"样本 {sample_file} 预测NoC: {predicted_noc} (置信度: {confidence:.3f})")
+        if pd.isna(predicted_noc) or predicted_noc <= 0:
+            # 如果文件名提取失败，使用模型预测或默认值
+            if self.noc_predictor:
+                predicted_noc, confidence = self.noc_predictor.predict_noc(v5_features)
+            else:
+                predicted_noc, confidence = 2, 0.5
+            logger.warning(f"从文件名提取NoC失败，使用备用方法: {predicted_noc}")
+        else:
+            predicted_noc = int(predicted_noc)
+            confidence = 1.0  # 从文件名提取的置信度设为1.0
+            logger.info(f"从文件名提取NoC: {predicted_noc}")
+        
+        logger.info(f"样本 {sample_file} 最终NoC: {predicted_noc} (置信度: {confidence:.3f})")
         
         return predicted_noc, confidence, v5_features
     
