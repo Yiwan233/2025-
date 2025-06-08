@@ -185,6 +185,28 @@ class Q1FeatureEngineering:
         
         return pd.DataFrame(processed_data)
     
+    def extract_true_mixture_info(self, filename):
+        """从文件名提取真实的贡献者信息和混合比例"""
+        # 匹配模式：贡献者ID_比例部分
+        match = re.search(r'-(\d+(?:_\d+)*)-([^-]+)-', str(filename))
+        if not match:
+            return None, None
+        
+        contributor_ids = match.group(1).split('_')
+        ratio_part = match.group(2)
+        
+        # 解析比例部分，如"1;4"表示1:4的比例
+        if ';' in ratio_part:
+            ratio_values = [float(x) for x in ratio_part.split(';')]
+            # 标准化为概率
+            total = sum(ratio_values)
+            true_ratios = [r/total for r in ratio_values]
+        else:
+            # 如果没有比例信息，假设等比例
+            true_ratios = [1.0/len(contributor_ids)] * len(contributor_ids)
+        
+        return contributor_ids, true_ratios
+    
     def extract_v5_features(self, sample_file, sample_peaks):
         """提取V5特征集（继承并扩展Q1的特征提取）"""
         if sample_peaks.empty:
@@ -1093,6 +1115,11 @@ class MGM_RF_Pipeline:
         # 步骤1: 预测NoC
         predicted_noc, noc_confidence, v5_features = self.mgm_rf_inferencer.predict_noc_from_sample(sample_data)
         
+        # 步骤1.5: 提取真实混合信息（如果可用）
+        true_contributor_ids, true_ratios = self.mgm_rf_inferencer.q1_feature_engineering.extract_true_mixture_info(sample_file)
+        if true_contributor_ids and true_ratios:
+            logger.info(f"样本 {sample_file} 真实贡献者: {true_contributor_ids}, 真实比例: {true_ratios}")
+        
         # 步骤2: 设置V5特征
         self.mgm_rf_inferencer.set_v5_features(v5_features)
         
@@ -1138,7 +1165,9 @@ class MGM_RF_Pipeline:
             'posterior_summary': posterior_summary,
             'convergence_diagnostics': convergence_diagnostics,
             'computation_time': end_time - start_time,
-            'observed_data': observed_data
+            'observed_data': observed_data,
+            'true_contributor_ids': true_contributor_ids,  
+            'true_mixture_ratios': true_ratios,          
         }
         
         logger.info(f"样本 {sample_file} 分析完成，耗时: {end_time - start_time:.1f}秒")
@@ -1231,6 +1260,22 @@ class MGM_RF_Pipeline:
             'final_step_size': results.get('final_step_size', 'N/A')
         }
         
+        # 计算与真值的比较（如果有真值）
+        if 'true_mixture_ratios' in results and results.get('true_mixture_ratios'):
+            true_ratios = results['true_mixture_ratios']
+            predicted_means = [summary[f'Mx_{i+1}']['mean'] for i in range(N)]
+            
+            # 计算误差指标
+            if len(true_ratios) == len(predicted_means):
+                mae = np.mean(np.abs(np.array(predicted_means) - np.array(true_ratios)))
+                rmse = np.sqrt(np.mean((np.array(predicted_means) - np.array(true_ratios))**2))
+                
+                summary['accuracy_metrics'] = {
+                    'mae': mae,
+                    'rmse': rmse,
+                    'true_ratios': true_ratios,
+                    'predicted_ratios': predicted_means
+                }
         # 贡献者排序（按后验均值）
         mx_means = [(i+1, summary[f'Mx_{i+1}']['mean']) for i in range(N)]
         mx_means.sort(key=lambda x: x[1], reverse=True)
@@ -1574,6 +1619,11 @@ def print_sample_summary(result: Dict):
             print(f"    第{rank}主要贡献者: {mean_ratio:.3f} (95%CI: [{ci_95[0]:.3f}, {ci_95[1]:.3f}])")
     else:
         print(f"  ⚠️  无有效峰数据，使用默认比例")
+    if result.get('true_mixture_ratios'):
+        print(f"  真实混合比例: {result['true_mixture_ratios']}")
+        if 'accuracy_metrics' in result.get('posterior_summary', {}):
+            metrics = result['posterior_summary']['accuracy_metrics']
+            print(f"  预测精度 - MAE: {metrics['mae']:.4f}, RMSE: {metrics['rmse']:.4f}")
 
 def generate_batch_summary(all_results: Dict[str, Dict]):
     """生成批量分析摘要报告"""
