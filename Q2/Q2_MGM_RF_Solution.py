@@ -84,6 +84,14 @@ class Config:
 config = Config()
 os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
+def extract_noc_from_filename(filename):
+        """从文件名提取贡献者人数（NoC）"""
+        match = re.search(r'-(\d+(?:_\d+)*)-[\d;]+-', str(filename))
+        if match:
+            ids = [id_val for id_val in match.group(1).split('_') if id_val.isdigit()]
+            return len(ids) if len(ids) > 0 else np.nan
+        return np.nan
+
 # =====================
 # 2. Q1特征工程模块继承
 # =====================
@@ -94,7 +102,7 @@ class Q1FeatureEngineering:
         self.feature_cache = {}
         logger.info("Q1特征工程模块初始化完成")
     
-    def extract_noc_from_filename(self, filename):
+    def extract_noc_from_filename(self, filename: str):
         """从文件名提取贡献者人数（NoC）"""
         match = re.search(r'-(\d+(?:_\d+)*)-[\d;]+-', str(filename))
         if match:
@@ -831,10 +839,10 @@ class GenotypeEnumerator:
 class MGM_RF_Inferencer:
     """MGM-RF混合比例推断器，集成Q1的随机森林和MGM-M方法"""
     
-    def __init__(self, q1_model_path: str = None):
+    def __init__(self, q1_model_path: str = None, sample_id: str = None):
         # 初始化组件
         self.pseudo_freq_calculator = PseudoFrequencyCalculator()
-        self.genotype_enumerator = GenotypeEnumerator()
+        self.genotype_enumerator = GenotypeEnumerator(max_contributors=extract_noc_from_filename(sample_id) if sample_id else 5)
         self.v5_integrator = None
         self.noc_predictor = NoCPredictor(q1_model_path) if q1_model_path else None
         self.q1_feature_engineering = Q1FeatureEngineering()
@@ -1226,8 +1234,8 @@ class MGM_RF_Inferencer:
 class MGM_RF_Pipeline:
     """MGM-RF完整分析流水线"""
     
-    def __init__(self, q1_model_path: str = None):
-        self.mgm_rf_inferencer = MGM_RF_Inferencer(q1_model_path)
+    def __init__(self, q1_model_path: str = None, sample_id: str= None):
+        self.mgm_rf_inferencer = MGM_RF_Inferencer(q1_model_path, sample_id)
         self.results = {}
         logger.info("MGM-RF流水线初始化完成")
     
@@ -1667,7 +1675,7 @@ def analyze_single_sample_from_att2(sample_id: str, att2_path: str, q1_model_pat
     """分析附件2中的单个样本"""
     
     # 初始化流水线
-    pipeline = MGM_RF_Pipeline(q1_model_path)
+    pipeline = MGM_RF_Pipeline(q1_model_path, sample_id)
     
     # 加载附件2数据
     att2_data = pipeline.load_attachment2_data(att2_path)
