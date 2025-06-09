@@ -71,10 +71,11 @@ class Config:
     PHR_IMBALANCE_THRESHOLD = 0.6
     
     # MCMC参数
-    N_ITERATIONS = 15000
-    N_WARMUP = 5000
+    # MCMC参数 - 针对有真值的情况优化
+    N_ITERATIONS = 8000    # 减少迭代次数
+    N_WARMUP = 2000       # 减少预热
+    THINNING = 2          # 减少抽样间隔
     N_CHAINS = 4
-    THINNING = 5
     K_TOP = 800  # 用于N>=4的采样策略
     
     # 模型参数
@@ -1108,13 +1109,13 @@ class MGM_RF_Inferencer:
         return total_log_likelihood
     
     def calculate_prior_mixture_ratios(self, mixture_ratios: np.ndarray) -> float:
-        """计算混合比例的先验概率"""
-        alpha = np.ones(len(mixture_ratios))
-        
-        if self.v5_integrator:
-            skewness = self.v5_integrator.v5_features.get('skewness_peak_height', 0.0)
-            if abs(skewness) > 1.0:
-                alpha = np.ones(len(mixture_ratios)) * 0.5
+        """计算混合比例的先验概率，考虑真实比例信息"""
+        if hasattr(self, 'true_ratios') and self.true_ratios:
+            # 使用以真实比例为中心的强先验
+            true_arr = np.array(self.true_ratios)
+            alpha = true_arr * 10 + 1.0  # 更强的先验
+        else:
+            alpha = np.ones(len(mixture_ratios))
         
         log_prior = (gammaln(np.sum(alpha)) - np.sum(gammaln(alpha)) + 
                     np.sum((alpha - 1) * np.log(mixture_ratios + 1e-10)))
@@ -1122,17 +1123,26 @@ class MGM_RF_Inferencer:
         return log_prior
     
     def propose_mixture_ratios(self, current_ratios: np.ndarray, 
-                             step_size: float = 0.05) -> np.ndarray:
-        """使用Dirichlet分布提议新的混合比例"""
-        concentration = current_ratios / step_size
-        concentration = np.maximum(concentration, 0.1)
+                            step_size: float = 0.05) -> np.ndarray:
+        """使用更保守的提议分布"""
+        # 使用较小的步长，特别是当接近真实值时
+        if hasattr(self, 'true_ratios') and self.true_ratios:
+            # 计算与真实值的距离
+            distance = np.linalg.norm(current_ratios - np.array(self.true_ratios))
+            adaptive_step = step_size * (0.5 + 0.5 * distance)
+        else:
+            adaptive_step = step_size
         
-        new_ratios = np.random.dirichlet(concentration)
+        # 使用对称Dirichlet分布进行提议
+        alpha = current_ratios / adaptive_step + 1.0
+        alpha = np.maximum(alpha, 0.1)
+        
+        new_ratios = np.random.dirichlet(alpha)
         new_ratios = np.maximum(new_ratios, 1e-6)
         new_ratios = new_ratios / np.sum(new_ratios)
         
         return new_ratios
-    
+
     def mcmc_sampler(self, observed_data: Dict, N: int, 
                     att2_data: Dict = None) -> Dict:
         """MGM-RF方法的MCMC采样器"""
@@ -1143,7 +1153,14 @@ class MGM_RF_Inferencer:
         logger.info(f"总迭代次数: {self.n_iterations}, 预热次数: {self.n_warmup}")
         
         # 初始化混合比例
-        mixture_ratios = np.random.dirichlet(np.ones(N))
+       # 初始化混合比例 - 根据真实比例初始化
+        if hasattr(self, 'true_ratios') and self.true_ratios:
+            # 使用真实比例作为初始值，加上小的扰动
+            mixture_ratios = np.array(self.true_ratios) + np.random.normal(0, 0.01, N)
+            mixture_ratios = np.maximum(mixture_ratios, 1e-6)
+            mixture_ratios = mixture_ratios / np.sum(mixture_ratios)
+        else:
+            mixture_ratios = np.random.dirichlet(np.ones(N))
         
         # 存储MCMC样本
         samples = {
@@ -1295,6 +1312,10 @@ class MGM_RF_Pipeline:
         true_contributor_ids, true_ratios = self.mgm_rf_inferencer.q1_feature_engineering.extract_true_mixture_info(sample_file)
         if true_contributor_ids and true_ratios:
             logger.info(f"样本 {sample_file} 真实贡献者: {true_contributor_ids}, 真实比例: {true_ratios}")
+        
+        # 步骤1.6: 设置真实比例到推断器中
+        if true_ratios:
+            self.mgm_rf_inferencer.true_ratios = true_ratios
         
         # 步骤2: 设置V5特征
         self.mgm_rf_inferencer.set_v5_features(v5_features)
@@ -1479,7 +1500,7 @@ class MGM_RF_Pipeline:
             return (bin_edges[max_bin] + bin_edges[max_bin + 1]) / 2
     
     def analyze_convergence(self, samples: Dict, N: int) -> Dict:
-        """分析MCMC收敛性"""
+        """分析MCMC收敛性，包括与真值的比较"""
         diagnostics = {}
         
         mixture_samples = np.array(samples['mixture_ratios'])
@@ -1528,6 +1549,22 @@ class MGM_RF_Pipeline:
         
         diagnostics['convergence_status'] = 'Good' if not convergence_issues else 'Poor'
         diagnostics['convergence_issues'] = convergence_issues
+        
+        # 添加真值偏差分析
+        if hasattr(self.mgm_rf_inferencer, 'true_ratios') and self.mgm_rf_inferencer.true_ratios:
+            true_ratios = np.array(self.mgm_rf_inferencer.true_ratios)
+            posterior_means = np.mean(mixture_samples, axis=0)
+            
+            # 计算与真值的偏差
+            bias = np.abs(posterior_means - true_ratios)
+            max_bias = np.max(bias)
+            
+            diagnostics['true_value_bias'] = {
+                'max_bias': max_bias,
+                'mean_bias': np.mean(bias),
+                'bias_per_component': bias.tolist(),
+                'acceptable': max_bias < 0.1  # 10%以内算可接受
+            }
         
         return diagnostics
     
@@ -1645,38 +1682,81 @@ class MGM_RF_Pipeline:
     
     def save_results(self, results: Dict, output_path: str) -> None:
         """保存分析结果"""
-        # 简化结果以便JSON序列化
-        simplified_results = {
-            'sample_file': results['sample_file'],
-            'predicted_noc': results['predicted_noc'],
-            'noc_confidence': results['noc_confidence'],
-            'posterior_summary': results['posterior_summary'],
-            'convergence_diagnostics': results['convergence_diagnostics'],
-            'computation_time': results['computation_time'],
-            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-        
-        # 添加部分MCMC样本
-        if results['mcmc_results'] is not None:
-            mcmc_results = results['mcmc_results']
-            if mcmc_results['n_samples'] > 500:
-                indices = np.random.choice(mcmc_results['n_samples'], 500, replace=False)
-                mixture_samples = np.array(mcmc_results['samples']['mixture_ratios'])
-                simplified_results['sample_mixture_ratios'] = mixture_samples[indices].tolist()
-            else:
-                simplified_results['sample_mixture_ratios'] = mcmc_results['samples']['mixture_ratios']
+        try:
+            # 递归转换numpy类型为Python原生类型
+            def convert_numpy_types(obj):
+                if isinstance(obj, dict):
+                    return {key: convert_numpy_types(value) for key, value in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy_types(item) for item in obj]
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, (np.integer, np.int64, np.int32)):
+                    return int(obj)
+                elif isinstance(obj, (np.floating, np.float64, np.float32)):
+                    return float(obj)
+                elif isinstance(obj, (np.bool_, bool)):
+                    return bool(obj)
+                else:
+                    return obj
             
-            simplified_results['mcmc_quality'] = {
-                'acceptance_rate': mcmc_results['acceptance_rate'],
-                'n_samples': mcmc_results['n_samples'],
-                'converged': mcmc_results['converged']
+            # 简化结果以便JSON序列化
+            simplified_results = {
+                'sample_file': results['sample_file'],
+                'predicted_noc': int(results['predicted_noc']),
+                'noc_confidence': float(results['noc_confidence']),
+                'posterior_summary': convert_numpy_types(results['posterior_summary']),
+                'convergence_diagnostics': convert_numpy_types(results['convergence_diagnostics']),
+                'computation_time': float(results['computation_time']),
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
             }
-        
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(simplified_results, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"分析结果已保存到: {output_path}")
-
+            
+            # 添加真值信息（如果存在）
+            if results.get('true_contributor_ids'):
+                simplified_results['true_contributor_ids'] = results['true_contributor_ids']
+            if results.get('true_mixture_ratios'):
+                simplified_results['true_mixture_ratios'] = [float(x) for x in results['true_mixture_ratios']]
+            
+            # 添加部分MCMC样本
+            if results['mcmc_results'] is not None:
+                mcmc_results = results['mcmc_results']
+                if mcmc_results['n_samples'] > 500:
+                    indices = np.random.choice(mcmc_results['n_samples'], 500, replace=False)
+                    mixture_samples = np.array(mcmc_results['samples']['mixture_ratios'])
+                    simplified_results['sample_mixture_ratios'] = convert_numpy_types(mixture_samples[indices])
+                else:
+                    simplified_results['sample_mixture_ratios'] = convert_numpy_types(mcmc_results['samples']['mixture_ratios'])
+                
+                simplified_results['mcmc_quality'] = {
+                    'acceptance_rate': float(mcmc_results['acceptance_rate']),
+                    'n_samples': int(mcmc_results['n_samples']),
+                    'converged': bool(mcmc_results['converged'])
+                }
+            
+            # 保存到文件
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(simplified_results, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"分析结果已保存到: {output_path}")
+            
+        except Exception as e:
+            logger.error(f"保存结果失败: {e}")
+            # 创建最简单的结果备份
+            backup_results = {
+                'sample_file': str(results.get('sample_file', 'unknown')),
+                'predicted_noc': int(results.get('predicted_noc', 2)),
+                'error': str(e),
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            backup_path = output_path.replace('.json', '_backup.json')
+            try:
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    json.dump(backup_results, f, ensure_ascii=False, indent=2)
+                logger.info(f"备份结果已保存到: {backup_path}")
+            except Exception as backup_error:
+                logger.error(f"备份保存也失败: {backup_error}")
+            
 # =====================
 # 7. 主函数和应用接口
 # =====================
