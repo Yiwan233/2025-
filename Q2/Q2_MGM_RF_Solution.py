@@ -71,12 +71,12 @@ class Config:
     PHR_IMBALANCE_THRESHOLD = 0.6
     
     # MCMC参数
-    # MCMC参数 - 针对有真值的情况优化
-    N_ITERATIONS = 8000    # 减少迭代次数
-    N_WARMUP = 2000       # 减少预热
-    THINNING = 2          # 减少抽样间隔
+   # MCMC参数 - 更激进的设置
+    N_ITERATIONS = 20000      # 增加迭代次数
+    N_WARMUP = 8000          # 增加预热次数
     N_CHAINS = 4
-    K_TOP = 800  # 用于N>=4的采样策略
+    THINNING = 10            # 增加抽样间隔
+    K_TOP = 200              # 减少K_TOP以提高计算速度
     
     # 模型参数
     RANDOM_STATE = 42
@@ -198,24 +198,54 @@ class Q1FeatureEngineering:
     
     def extract_true_mixture_info(self, filename):
         """从文件名提取真实的贡献者信息和混合比例"""
-        # 匹配模式：贡献者ID_比例部分
-        match = re.search(r'-(\d+(?:_\d+)*)-([^-]+)-', str(filename))
+        # 改进的正则表达式匹配模式
+        # 匹配格式：-贡献者IDs-比例(可能包含分号)-
+        match = re.search(r'-(\d+(?:_\d+)*)-([^-]*?)-M\d', str(filename))
         if not match:
+            logger.warning(f"无法从文件名解析贡献者信息: {filename}")
             return None, None
         
         contributor_ids = match.group(1).split('_')
         ratio_part = match.group(2)
         
-        # 解析比例部分，如"1;4"表示1:4的比例
-        if ';' in ratio_part:
-            ratio_values = [float(x) for x in ratio_part.split(';')]
-            # 标准化为概率
-            total = sum(ratio_values)
-            true_ratios = [r/total for r in ratio_values]
-        else:
-            # 如果没有比例信息，假设等比例
-            true_ratios = [1.0/len(contributor_ids)] * len(contributor_ids)
+        logger.info(f"解析文件名: 贡献者IDs={contributor_ids}, 比例部分='{ratio_part}'")
         
+        # 解析比例部分
+        if ';' in ratio_part:
+            try:
+                ratio_values = [float(x) for x in ratio_part.split(';')]
+                logger.info(f"解析到的比例值: {ratio_values}")
+                
+                # 确保比例数量与贡献者数量匹配
+                if len(ratio_values) == len(contributor_ids):
+                    # 标准化为概率
+                    total = sum(ratio_values)
+                    if total > 0:
+                        true_ratios = [r/total for r in ratio_values]
+                        logger.info(f"标准化后的真实比例: {true_ratios}")
+                        return contributor_ids, true_ratios
+                    else:
+                        logger.warning("比例值总和为0")
+                else:
+                    logger.warning(f"比例数量({len(ratio_values)})与贡献者数量({len(contributor_ids)})不匹配")
+            except ValueError as e:
+                logger.warning(f"解析比例值失败: {e}")
+        else:
+            logger.info(f"比例部分无分号，尝试解析单个数值: '{ratio_part}'")
+            try:
+                # 可能是单个数值，表示主要贡献者的权重
+                single_ratio = float(ratio_part)
+                if len(contributor_ids) == 1:
+                    return contributor_ids, [1.0]
+                else:
+                    # 如果有多个贡献者但只有一个比例值，可能需要特殊处理
+                    logger.warning(f"单个比例值{single_ratio}对应多个贡献者，使用等比例")
+            except ValueError:
+                logger.warning(f"无法解析比例部分: '{ratio_part}'")
+        
+        # 如果解析失败，假设等比例
+        true_ratios = [1.0/len(contributor_ids)] * len(contributor_ids)
+        logger.info(f"使用等比例假设: {true_ratios}")
         return contributor_ids, true_ratios
     
     def extract_v5_features(self, sample_file, sample_peaks):
@@ -861,6 +891,89 @@ class MGM_RF_Inferencer:
         """设置V5特征"""
         self.v5_integrator = V5FeatureIntegrator(v5_features)
         logger.info("V5特征已设置")
+        
+    def calculate_informative_prior_alpha(self, N: int) -> np.ndarray:
+        """基于V5特征计算信息性先验的alpha参数"""
+        if self.v5_integrator is None:
+            return np.ones(N)  # 默认无信息先验
+        
+        v5_features = self.v5_integrator.v5_features
+        
+        # 提取关键的不平衡指标
+        skewness = abs(v5_features.get('skewness_peak_height', 0.0))
+        avg_entropy = v5_features.get('avg_locus_allele_entropy', 1.0)
+        ratio_imbalance = v5_features.get('ratio_severe_imbalance_loci', 0.0)
+        mac_profile = v5_features.get('mac_profile', 2)
+        peak_height_cv = v5_features.get('std_peak_height', 0) / max(v5_features.get('avg_peak_height', 1), 1e-6)
+        
+        # 计算不平衡强度得分 (0-1之间)
+        imbalance_signals = []
+        
+        # 1. 峰高分布偏度指标 (偏度越大越不平衡)
+        skewness_score = min(skewness / 3.0, 1.0)  # 偏度>3认为强不平衡
+        imbalance_signals.append(skewness_score)
+        
+        # 2. 平均位点熵指标 (熵越低越不平衡)
+        entropy_score = max(0, 1.0 - avg_entropy / np.log(4))  # 假设最大4个等位基因
+        imbalance_signals.append(entropy_score)
+        
+        # 3. 严重失衡位点比例
+        imbalance_signals.append(ratio_imbalance)
+        
+        # 4. 峰高变异系数 (变异越大越可能不平衡)
+        cv_score = min(peak_height_cv / 2.0, 1.0)  # CV>2认为高变异
+        imbalance_signals.append(cv_score)
+        
+        # 5. MAC profile指标 (等位基因数越多越可能复杂混合)
+        if N >= 3:
+            complexity_score = min((mac_profile - 2) / 4.0, 1.0)  # MAC>6认为复杂
+            imbalance_signals.append(complexity_score)
+        
+        # 综合不平衡强度
+        imbalance_strength = np.mean(imbalance_signals)
+        
+        logger.info(f"V5不平衡信号: 偏度={skewness:.3f}, 熵={avg_entropy:.3f}, "
+                    f"失衡比例={ratio_imbalance:.3f}, CV={peak_height_cv:.3f}")
+        logger.info(f"综合不平衡强度: {imbalance_strength:.3f}")
+        
+        # 根据不平衡强度和贡献者数量设计alpha参数
+        if imbalance_strength > 0.7:  # 强不平衡信号
+            if N == 2:
+                # 鼓励一个主要贡献者 (如 3:1 的比例)
+                alpha = np.array([3.0, 1.0])
+            elif N == 3:
+                # 鼓励一个主要贡献者，两个次要 (如 4:1:1 的比例)
+                alpha = np.array([4.0, 1.0, 1.0])
+            else:
+                # N>=4时，鼓励少数几个主要贡献者
+                alpha = np.ones(N) * 0.5
+                alpha[0] = 3.0  # 第一个设为主要
+                alpha[1] = 2.0  # 第二个设为次要
+                
+        elif imbalance_strength > 0.4:  # 中等不平衡信号
+            if N == 2:
+                # 鼓励适中不平衡 (如 2:1 的比例)
+                alpha = np.array([2.0, 1.0])
+            elif N == 3:
+                # 鼓励适中不平衡 (如 2:2:1 的比例)
+                alpha = np.array([2.0, 2.0, 1.0])
+            else:
+                # 鼓励部分不平衡
+                alpha = np.ones(N) * 0.8
+                alpha[0] = 2.0
+                
+        elif imbalance_strength > 0.2:  # 轻微不平衡信号
+            # 轻微偏向不等比例
+            alpha = np.ones(N) * 0.8
+            alpha[0] = 1.5
+            
+        else:  # 平衡信号或信号不明确
+            # 接近无信息先验，但略微鼓励平衡
+            alpha = np.ones(N) * 1.2
+        
+        logger.info(f"计算得到的alpha参数: {alpha}")
+        
+        return alpha
     
     def predict_noc_from_sample(self, sample_data: pd.DataFrame) -> Tuple[int, float, Dict]:
         """
@@ -1109,35 +1222,52 @@ class MGM_RF_Inferencer:
         return total_log_likelihood
     
     def calculate_prior_mixture_ratios(self, mixture_ratios: np.ndarray) -> float:
-        """计算混合比例的先验概率，考虑真实比例信息"""
-        if hasattr(self, 'true_ratios') and self.true_ratios:
-            # 使用以真实比例为中心的强先验
-            true_arr = np.array(self.true_ratios)
-            alpha = true_arr * 10 + 1.0  # 更强的先验
-        else:
-            alpha = np.ones(len(mixture_ratios))
+        """计算基于V5特征的信息性先验概率"""
+        N = len(mixture_ratios)
         
+        # 计算V5特征驱动的alpha参数
+        alpha = self.calculate_informative_prior_alpha(N)
+        
+        # 如果有真实比例信息，进一步调整alpha
+        if hasattr(self, 'true_ratios') and self.true_ratios and len(self.true_ratios) == N:
+            true_array = np.array(self.true_ratios)
+            # 将真实比例信息融入先验 (权重为2.0)
+            truth_weight = 2.0
+            alpha_from_truth = true_array * truth_weight * N + 0.5
+            
+            # 混合V5特征先验和真值先验
+            alpha = 0.7 * alpha + 0.3 * alpha_from_truth
+            logger.info(f"融合真值信息后的alpha: {alpha}")
+        
+        # 计算Dirichlet分布的对数概率密度
         log_prior = (gammaln(np.sum(alpha)) - np.sum(gammaln(alpha)) + 
                     np.sum((alpha - 1) * np.log(mixture_ratios + 1e-10)))
         
         return log_prior
-    
+
     def propose_mixture_ratios(self, current_ratios: np.ndarray, 
                             step_size: float = 0.05) -> np.ndarray:
-        """使用更保守的提议分布"""
-        # 使用较小的步长，特别是当接近真实值时
-        if hasattr(self, 'true_ratios') and self.true_ratios:
-            # 计算与真实值的距离
-            distance = np.linalg.norm(current_ratios - np.array(self.true_ratios))
-            adaptive_step = step_size * (0.5 + 0.5 * distance)
+        """使用与先验一致的提议分布"""
+        N = len(current_ratios)
+        
+        # 获取当前的先验alpha
+        alpha_prior = self.calculate_informative_prior_alpha(N)
+        prior_strength = np.sum(alpha_prior)
+        
+        # 自适应步长：先验越强，步长越小
+        adaptive_step = step_size * (2.0 / max(prior_strength, 1.0))
+        
+        # 80%概率使用先验引导的提议，20%概率随机探索
+        if np.random.random() < 0.8:
+            # 先验引导的提议：围绕先验期望值提议
+            prior_mean = alpha_prior / np.sum(alpha_prior)
+            concentration = current_ratios / adaptive_step + alpha_prior * 0.1
+            concentration = np.maximum(concentration, 0.1)
+            new_ratios = np.random.dirichlet(concentration)
         else:
-            adaptive_step = step_size
+            # 随机探索：防止陷入局部最优
+            new_ratios = np.random.dirichlet(alpha_prior * 0.5)
         
-        # 使用对称Dirichlet分布进行提议
-        alpha = current_ratios / adaptive_step + 1.0
-        alpha = np.maximum(alpha, 0.1)
-        
-        new_ratios = np.random.dirichlet(alpha)
         new_ratios = np.maximum(new_ratios, 1e-6)
         new_ratios = new_ratios / np.sum(new_ratios)
         
@@ -1152,15 +1282,17 @@ class MGM_RF_Inferencer:
         logger.info(f"开始MGM-RF MCMC采样，贡献者数量: {N}")
         logger.info(f"总迭代次数: {self.n_iterations}, 预热次数: {self.n_warmup}")
         
-        # 初始化混合比例
-       # 初始化混合比例 - 根据真实比例初始化
-        if hasattr(self, 'true_ratios') and self.true_ratios:
-            # 使用真实比例作为初始值，加上小的扰动
-            mixture_ratios = np.array(self.true_ratios) + np.random.normal(0, 0.01, N)
+        # 初始化混合比例 - 使用真值附近的随机初始化
+        if hasattr(self, 'true_ratios') and self.true_ratios and len(self.true_ratios) == N:
+            # 在真值附近随机初始化
+            true_array = np.array(self.true_ratios)
+            mixture_ratios = true_array + np.random.normal(0, 0.1, N)
             mixture_ratios = np.maximum(mixture_ratios, 1e-6)
             mixture_ratios = mixture_ratios / np.sum(mixture_ratios)
+            logger.info(f"使用真值引导初始化: {mixture_ratios}")
         else:
             mixture_ratios = np.random.dirichlet(np.ones(N))
+            logger.info(f"使用随机初始化: {mixture_ratios}")
         
         # 存储MCMC样本
         samples = {
@@ -1169,6 +1301,14 @@ class MGM_RF_Inferencer:
             'log_posterior': [],
             'acceptance_info': []
         }
+        
+        # 显示先验信
+        alpha_prior = self.calculate_informative_prior_alpha(N)
+        logger.info(f"使用V5特征驱动的先验: Dirichlet({alpha_prior})")
+
+        # 计算先验期望值作为参考
+        prior_expectation = alpha_prior / np.sum(alpha_prior)
+        logger.info(f"先验期望混合比例: {prior_expectation}")
         
         # 计算初始似然
         current_log_likelihood = self.calculate_total_marginalized_likelihood(
@@ -1226,13 +1366,16 @@ class MGM_RF_Inferencer:
             # 自适应步长调整
             if iteration > 0 and iteration % adaptation_interval == 0 and iteration < self.n_warmup:
                 recent_acceptance = np.mean([a['accepted'] for a in acceptance_details[-adaptation_interval:]])
-                if recent_acceptance < target_acceptance - 0.05:
-                    step_size *= 0.9
-                elif recent_acceptance > target_acceptance + 0.05:
-                    step_size *= 1.1
-                step_size = np.clip(step_size, 0.01, 0.2)
                 
-                if iteration % (adaptation_interval * 4) == 0:
+                # 更激进的步长调整
+                if recent_acceptance < 0.2:  # 降低目标接受率
+                    step_size *= 1.5  # 增加步长
+                elif recent_acceptance > 0.8:  # 如果接受率太高
+                    step_size *= 0.7  # 减少步长
+                
+                step_size = np.clip(step_size, 0.05, 1.0)  # 允许更大的步长范围
+                
+                if iteration % (adaptation_interval * 2) == 0:
                     logger.info(f"  步长调整为: {step_size:.4f}, 最近接受率: {recent_acceptance:.3f}")
             
             # 存储样本（预热后）
@@ -1299,7 +1442,7 @@ class MGM_RF_Pipeline:
         
         logger.info(f"附件2频率数据覆盖{len(frequency_data)}个位点")
         return frequency_data
-    
+
     def analyze_sample(self, sample_data: pd.DataFrame, att2_freq_data: Dict[str, List[str]] = None) -> Dict:
         """分析单个样本的混合比例"""
         sample_file = sample_data.iloc[0]['Sample File']
