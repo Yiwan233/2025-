@@ -1,0 +1,124 @@
+{
+  "sample_file": "E05_RD14-0003-36_37_38_39-1;2;2;1-M2e-0.378IP-Q1.2_001.5sec.fsa",
+  "computation_time": 85.49792289733887,
+  "success": true,
+  "denoising_metrics": {
+    "original_peak_count": 60,
+    "denoised_peak_count": 40,
+    "filtered_peak_count": 20,
+    "filtering_ratio": 0.3333333333333333,
+    "original_snr": 7.546336206896552,
+    "denoised_snr": 6.783479349186482,
+    "snr_improvement": 0.898910300734693,
+    "dynamic_range": 21.13157894736842,
+    "height_consistency": 0.25651369304475036,
+    "strong_signal_ratio": 0.25,
+    "avg_alleles_per_locus": 2.5,
+    "locus_count": 16
+  },
+  "v5_features": {
+    "Sample File": "E05_RD14-0003-36_37_38_39-1;2;2;1-M2e-0.378IP-Q1.2_001.5sec.fsa",
+    "mac_profile": "5",
+    "total_distinct_alleles": 28,
+    "avg_alleles_per_locus": 3.75,
+    "std_alleles_per_locus": 0.6831300510639732,
+    "loci_gt3_alleles": "15",
+    "loci_gt4_alleles": "12",
+    "loci_gt5_alleles": "1",
+    "loci_gt6_alleles": "0",
+    "allele_count_dist_entropy": 0.918045917665631,
+    "avg_peak_height": 206.96666666666667,
+    "std_peak_height": 179.52195470811424,
+    "min_peak_height": 36.0,
+    "max_peak_height": 803.0,
+    "median_peak_height": 139.5,
+    "signal_to_noise_ratio": 22.305555555555557,
+    "dynamic_range": 1.367459460061413,
+    "skewness_peak_height": 1.7250530534855295,
+    "kurtosis_peak_height": 5.484715318310264,
+    "avg_relative_intensity": 0.6224127405531615,
+    "std_relative_intensity": 0.32129651648155666,
+    "weak_signal_count": "21",
+    "weak_signal_ratio": 0.35,
+    "strong_signal_count": "0",
+    "strong_signal_ratio": 0.0,
+    "avg_phr": 0.711484593837535,
+    "std_phr": 0,
+    "min_phr": 0.711484593837535,
+    "median_phr": 0.711484593837535,
+    "num_loci_with_phr": 1,
+    "num_severe_imbalance_loci": "0",
+    "ratio_severe_imbalance_loci": 0.0,
+    "avg_locus_imbalance": 0.47968693842188925,
+    "max_locus_imbalance": 0.8171185507328901,
+    "modality_peak_height": 3,
+    "num_saturated_peaks": "0",
+    "ratio_saturated_peaks": 0.0,
+    "inter_locus_balance_entropy": 2.651639021891607,
+    "avg_locus_allele_entropy": 1.1661690476707636,
+    "peak_height_entropy": 2.5400158723756983,
+    "num_loci_with_effective_alleles": 16,
+    "num_loci_no_effective_alleles": 4,
+    "height_size_correlation": -0.4832670227012782,
+    "height_size_slope": -1.28218141450973,
+    "degradation_r_squared": 0.23354701523055785,
+    "baseline_noise_level": 63.1,
+    "signal_above_baseline": 0.35,
+    "outlier_peak_count": "11",
+    "outlier_peak_ratio": 0.18333333333333332,
+    "signal_consistency": 0.13260450294034032
+  },
+  "posterior_summary": {
+    "noc_posterior": {
+      "4": 1.0
+    },
+    "most_probable_noc": "4",
+    "noc_confidence": 1.0,
+    "mixture_ratio_summary": {
+      "NoC_4": {
+        "Mx_1": {
+          "mean": 0.3727931656970445,
+          "std": 0.02631365887740566,
+          "median": 0.374857563840528,
+          "credible_interval_95": [
+            0.32159236883950504,
+            0.4225998077362202
+          ]
+        },
+        "Mx_2": {
+          "mean": 0.2869481977704718,
+          "std": 0.027565923688239107,
+          "median": 0.2871502269466183,
+          "credible_interval_95": [
+            0.237442626157925,
+            0.3428085485470615
+          ]
+        },
+        "Mx_3": {
+          "mean": 0.15642821733357878,
+          "std": 0.026495124508273397,
+          "median": 0.155971401401576,
+          "credible_interval_95": [
+            0.108319507968081,
+            0.20940124263170437
+          ]
+        },
+        "Mx_4": {
+          "mean": 0.1838304191989049,
+          "std": 0.03012217365279695,
+          "median": 0.18338558955567358,
+          "credible_interval_95": [
+            0.12650570994351917,
+            0.24585506528452028
+          ]
+        }
+      }
+    },
+    "model_quality": {
+      "acceptance_rate": 0.05425,
+      "n_samples": 2400,
+      "converged": false
+    }
+  },
+  "timestamp": "2025-06-09 21:35:01"
+}
