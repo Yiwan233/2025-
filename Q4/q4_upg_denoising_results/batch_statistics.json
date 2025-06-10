@@ -1,0 +1,23 @@
+{
+  "total_samples": 3,
+  "successful_samples": 3,
+  "success_rate": 1.0,
+  "avg_computation_time": 30.79850459098816,
+  "timestamp": "2025-06-10 21:29:04",
+  "denoising_stats": {
+    "avg_snr_improvement": 0.833397453800797,
+    "median_snr_improvement": 0.9784647661359989,
+    "snr_improvement_std": 0.33794870775465313,
+    "avg_filtering_ratio": 0.3282051282051282
+  },
+  "mcmc_stats": {
+    "mcmc_success_count": 3,
+    "mcmc_success_rate": 1.0,
+    "avg_acceptance_rate": 0.7763833333333333,
+    "convergence_rate": 0.3333333333333333,
+    "noc_distribution": {
+      "2": 2,
+      "3": 1
+    }
+  }
+}

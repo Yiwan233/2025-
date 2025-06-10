@@ -1,0 +1,112 @@
+{
+  "sample_file": "F03_RD14-0003-49_50_29-1;4;1-M3S30-0.09IP-Q2.9_002.5sec.fsa",
+  "computation_time": 18.698402881622314,
+  "success": true,
+  "denoising_metrics": {
+    "original_peak_count": 10,
+    "denoised_peak_count": 8,
+    "filtered_peak_count": 2,
+    "filtering_ratio": 0.2,
+    "original_snr": 2.1683168316831685,
+    "denoised_snr": 2.1216216216216215,
+    "snr_improvement": 0.9784647661359989,
+    "dynamic_range": 2.71875,
+    "height_consistency": 0.7016299990775148,
+    "strong_signal_ratio": 0.25,
+    "avg_alleles_per_locus": 1.3333333333333333,
+    "locus_count": 6
+  },
+  "v5_features": {
+    "Sample File": "F03_RD14-0003-49_50_29-1;4;1-M3S30-0.09IP-Q2.9_002.5sec.fsa",
+    "mac_profile": "2",
+    "total_distinct_alleles": 9,
+    "avg_alleles_per_locus": 1.6666666666666667,
+    "std_alleles_per_locus": 0.5163977794943223,
+    "loci_gt3_alleles": "0",
+    "loci_gt4_alleles": "0",
+    "loci_gt5_alleles": "0",
+    "loci_gt6_alleles": "0",
+    "allele_count_dist_entropy": 0.6365141680948128,
+    "avg_peak_height": 51.2,
+    "std_peak_height": 16.98705389406886,
+    "min_peak_height": 32.0,
+    "max_peak_height": 87.0,
+    "median_peak_height": 46.0,
+    "signal_to_noise_ratio": 2.71875,
+    "dynamic_range": 0.5703969830726248,
+    "skewness_peak_height": 0.7373347743773305,
+    "kurtosis_peak_height": 2.514766438883085,
+    "avg_relative_intensity": 0.8360177975528366,
+    "std_relative_intensity": 0.21321020058389434,
+    "weak_signal_count": "10",
+    "weak_signal_ratio": 1.0,
+    "strong_signal_count": "0",
+    "strong_signal_ratio": 0.0,
+    "avg_phr": 0.5900444938820911,
+    "std_phr": 0.11317404245111462,
+    "min_phr": 0.41379310344827586,
+    "median_phr": 0.6231924360400445,
+    "num_loci_with_phr": 4,
+    "num_severe_imbalance_loci": "2",
+    "ratio_severe_imbalance_loci": 0.5,
+    "avg_locus_imbalance": 0.26453442540243116,
+    "max_locus_imbalance": 0.4146341463414634,
+    "modality_peak_height": 2,
+    "num_saturated_peaks": "0",
+    "ratio_saturated_peaks": 0.0,
+    "inter_locus_balance_entropy": 1.6938824489331994,
+    "avg_locus_allele_entropy": 0.6528729525908994,
+    "peak_height_entropy": 2.0253262199700677,
+    "num_loci_with_effective_alleles": 6,
+    "num_loci_no_effective_alleles": 14,
+    "height_size_correlation": -0.36380848273906113,
+    "height_size_slope": -0.15665187624349497,
+    "degradation_r_squared": 0.13235661211289773,
+    "baseline_noise_level": 32.9,
+    "signal_above_baseline": 0.0,
+    "outlier_peak_count": "1",
+    "outlier_peak_ratio": 0.1,
+    "signal_consistency": 0.6682216036314677
+  },
+  "posterior_summary": {
+    "mixture_ratio_summary": {
+      "NoC_3": {
+        "Mx_1": {
+          "mean": 0.6462967762072662,
+          "std": 0.1243649441353349,
+          "median": 0.661237581043943,
+          "credible_interval_95": [
+            0.3713431077388933,
+            0.8492104823137242
+          ]
+        },
+        "Mx_2": {
+          "mean": 0.026929840685182168,
+          "std": 0.06333116418640229,
+          "median": 0.0007545663845668516,
+          "credible_interval_95": [
+            9.037665825636612e-16,
+            0.25256490645833074
+          ]
+        },
+        "Mx_3": {
+          "mean": 0.32677338310755155,
+          "std": 0.12870185757645716,
+          "median": 0.3167042126999349,
+          "credible_interval_95": [
+            0.08349842038663556,
+            0.599287516478299
+          ]
+        }
+      }
+    },
+    "most_probable_noc": 3,
+    "noc_confidence": 1.0,
+    "model_quality": {
+      "acceptance_rate": 0.8213,
+      "n_samples": 2400,
+      "converged": false
+    }
+  },
+  "timestamp": "2025-06-10 21:29:02"
+}
