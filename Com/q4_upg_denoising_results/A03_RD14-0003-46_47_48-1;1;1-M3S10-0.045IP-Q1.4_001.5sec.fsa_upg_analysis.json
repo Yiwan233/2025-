@@ -1,0 +1,23 @@
+{
+  "sample_file": "A03_RD14-0003-46_47_48-1;1;1-M3S10-0.045IP-Q1.4_001.5sec.fsa",
+  "true_mixing_info": {
+    "contributor_ids": [
+      46,
+      47,
+      48
+    ],
+    "mixing_ratios": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "total_contributors": 3,
+    "raw_ratios": [
+      1,
+      1,
+      1
+    ]
+  },
+  "denoised_results": {
+    "consensus_noc": {
+      "map_noc": 

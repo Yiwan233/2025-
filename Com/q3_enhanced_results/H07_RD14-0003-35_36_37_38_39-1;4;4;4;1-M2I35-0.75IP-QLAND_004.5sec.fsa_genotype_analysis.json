@@ -1,0 +1,14 @@
+{
+  "sample_id": "H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa",
+  "predicted_noc": 2,
+  "noc_confidence": 0.5,
+  "posterior_summary": {
+    "AMEL": {
+      "contributor_1": {
+        "mode_genotype": [
+          "Y",
+          "X"
+        ],
+        "mode_probability": 0.42010502625656415,
+        "posterior_distribution": {
+          

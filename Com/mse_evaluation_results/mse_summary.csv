@@ -1,0 +1,2 @@
+﻿Method,Matched_Samples,Coverage_Rate,Overall_MSE,Overall_RMSE,Overall_MAE,NoC_Accuracy,Excellent_Rate,Good_Rate,Fair_Rate,Poor_Rate
+Q2,4,0.0784313725490196,0.005722374089809803,0.0756463752588966,0.0533329957101168,1.0,1.0,0.0,0.0,0.0
