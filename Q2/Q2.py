@@ -716,7 +716,133 @@ def create_enhanced_pipeline(q1_model_path: str = None):
             super().plot_results(results, output_dir)
     
     return EnhancedMGM_RF_Pipeline(enhanced_inferencer)
+def batch_process_all_samples(att2_path: str, q1_model_path: Optional[str] = None) -> List[Dict]:
+    """
+    批量处理附件2中的所有样本，并返回所有结果。
 
+    Args:
+        att2_path: 附件2数据的文件路径。
+        q1_model_path: 问题1预训练模型的路径 (可选)。
+
+    Returns:
+        一个包含每个样本分析结果字典的列表。
+    """
+    print(f"\n{'='*80}")
+    print("开始批量处理所有样本...")
+    print(f"{'='*80}")
+    
+    # 1. 初始化增强流水线
+    # 假设create_enhanced_pipeline函数在脚本的其他地方已定义
+    # 并且Q2_MGM_RF_Solution.py和相关类可被导入
+    try:
+        from Q2_MGM_RF_Solution import MGM_RF_Inferencer, MGM_RF_Pipeline, Q1_Feature_Engineering
+        # 注意：这里的导入路径可能需要根据您的项目结构调整
+    except ImportError:
+        print("错误：无法导入必要的MGM-RF组件。请确保Q2_MGM_RF_Solution.py在正确的路径下。")
+        return []
+
+    # 我们需要一个能计算V5特征的实例
+    # 假设Q1_Feature_Engineering类可以被这样使用
+    q1_feature_eng = Q1_Feature_Engineering(config_path='./config_params.json')
+    
+    # 创建一个简化的pipeline对象，主要使用其数据处理和MCMC推断部分
+    # 这里的实现依赖于您原始代码的结构，以下是一个可能的适配
+    
+    original_inferencer = MGM_RF_Inferencer(q1_model_path)
+    original_inferencer.q1_feature_engineering = q1_feature_eng # 注入特征计算器
+    enhanced_prior_calculator = EnhancedPriorCalculator()
+    enhanced_inferencer = EnhancedMGM_RF_Inferencer(original_inferencer, enhanced_prior_calculator)
+    
+    # 2. 加载并准备所有数据
+    print(f"正在从 {att2_path} 加载和解析所有样本数据...")
+    try:
+        df_att2 = pd.read_csv(att2_path, encoding='utf-8-sig')
+        # 创建一个样本ID到其数据块（DataFrame）的字典
+        all_samples_data = {sample_id: group for sample_id, group in df_att2.groupby('Sample File')}
+        print(f"成功加载并解析了 {len(all_samples_data)} 个独立样本。")
+    except Exception as e:
+        print(f"加载或解析附件2数据失败: {e}")
+        return []
+    
+    # 3. 从附件二推算伪频率 (在V10方案中这是必需的)
+    print("正在从附件2数据中推算等位基因伪频率...")
+    # 假设有一个方法来完成这个任务，我们在这里调用它
+    # 这个方法需要遍历all_samples_data来统计
+    # (此处的 `calculate_pseudo_frequencies` 是一个需要您根据V10方案实现的函数)
+    # pseudo_freqs = calculate_pseudo_frequencies(all_samples_data) 
+    pseudo_freqs = create_allele_frequencies() # 暂时使用您代码中的合成频率函数作为占位符
+    print("伪频率推算完成。")
+    
+    # 4. 循环处理每个样本
+    all_results = []
+    total_samples = len(all_samples_data)
+    processed_count = 0
+    
+    for sample_id, sample_df in all_samples_data.items():
+        processed_count += 1
+        print(f"\n--- 正在分析样本 ({processed_count}/{total_samples}): {sample_id} ---")
+        
+        try:
+            # 步骤 a: 预测NoC和提取V5特征
+            # 这部分逻辑需要从您的pipeline类中提取或适配
+            # 假设predict_noc_from_sample能处理传入的DataFrame
+            predicted_noc, noc_confidence, v5_features = enhanced_inferencer.predict_noc_from_sample(sample_df)
+            
+            # 步骤 b: 设置V5特征并构建信息先验
+            enhanced_inferencer.set_v5_features(v5_features)
+            enhanced_inferencer.predict_and_set_informative_prior(v5_features, predicted_noc)
+            
+            # 步骤 c: 准备用于MCMC的观测数据
+            sample_peaks_df = enhanced_inferencer.q1_feature_engineering.process_peaks_simplified(sample_df)
+            if sample_peaks_df.empty:
+                logger.warning(f"样本 {sample_id} 没有有效峰数据，跳过MCMC。")
+                continue
+
+            observed_data_mcmc = {}
+            for locus, locus_group in sample_peaks_df.groupby('Marker'):
+                observed_data_mcmc[locus] = {
+                    'locus': locus,
+                    'alleles': locus_group['Allele'].tolist(),
+                    'heights': dict(zip(locus_group['Allele'], locus_group['Height']))
+                }
+
+            # 步骤 d: 运行增强MCMC推断
+            start_time = time.time()
+            mcmc_results = enhanced_inferencer.enhanced_mcmc_sampler(
+                observed_data_mcmc, predicted_noc, pseudo_freqs
+            )
+            end_time = time.time()
+            
+            # 步骤 e: 整理并存储该样本的结果
+            posterior_summary = enhanced_inferencer.generate_posterior_summary(mcmc_results, predicted_noc)
+            convergence_diagnostics = enhanced_inferencer.analyze_convergence(mcmc_results['samples'], predicted_noc)
+            
+            single_result = {
+                'sample_file': sample_id,
+                'predicted_noc': predicted_noc,
+                'noc_confidence': noc_confidence,
+                'v5_features': v5_features,
+                'mixture_prediction': mcmc_results['mixture_prediction'],
+                'mcmc_results': {k:v for k,v in mcmc_results.items() if k != 'samples'}, # 不保存冗长的样本链
+                'posterior_summary': posterior_summary,
+                'convergence_diagnostics': convergence_diagnostics,
+                'computation_time': end_time - start_time
+            }
+            all_results.append(single_result)
+            
+            print(f"--- 样本 {sample_id} 分析完成。 ---")
+
+        except Exception as e:
+            print(f"处理样本 {sample_id} 时发生错误: {e}")
+            import traceback
+            traceback.print_exc()
+            continue # 继续处理下一个样本
+            
+    print(f"\n{'='*80}")
+    print(f"所有样本批量处理完成！共处理 {len(all_results)} 个样本。")
+    print(f"{'='*80}")
+    
+    return all_results
 # 使用示例和测试函数
 def test_enhanced_prior_system():
     """测试增强先验系统"""
@@ -928,6 +1054,53 @@ def main_enhanced():
     
     else:
         print("无效选择")
-
 if __name__ == "__main__":
-    main_enhanced()
+    
+    # --- 批量处理模式 ---
+    
+    # 1. 定义输入文件路径
+    # 请确保这些路径是正确的
+    ATTACHMENT2_FILE_PATH = './附件2：不同混合比例的STR图谱数据.csv'
+    # 问题一模型路径是可选的，如果您的P2代码能不依赖它运行，可以设为None
+    Q1_MODEL_PATH = './best_noc_model_gradient_boosting.pkl' 
+
+    # 2. 执行批量处理
+    all_sample_results = batch_process_all_samples(
+        att2_path=ATTACHMENT2_FILE_PATH,
+        q1_model_path=Q1_MODEL_PATH
+    )
+
+    # 3. 保存所有结果到一个大的JSON文件中
+    if all_sample_results:
+        output_filename = './problem2_all_samples_results.json'
+        print(f"\n正在将所有 {len(all_sample_results)} 个样本的结果保存到: {output_filename}")
+        try:
+            with open(output_filename, 'w', encoding='utf-8') as f:
+                json.dump(all_sample_results, f, ensure_ascii=False, indent=2)
+            print("所有结果已成功保存！")
+        except Exception as e:
+            print(f"保存汇总结果时发生错误: {e}")
+
+    # 4. （可选）生成一个包含所有样本关键结果的CSV摘要报告
+    if all_sample_results:
+        summary_list = []
+        for res in all_sample_results:
+            row = {'Sample File': res['sample_file'], 'Predicted NoC': res['predicted_noc']}
+            if res.get('posterior_summary'):
+                for i in range(res['predicted_noc']):
+                    mx_stats = res['posterior_summary'].get(f'Mx_{i+1}', {})
+                    row[f'Mx_{i+1}_mean'] = mx_stats.get('mean')
+                    row[f'Mx_{i+1}_std'] = mx_stats.get('std')
+            summary_list.append(row)
+        
+        df_summary = pd.DataFrame(summary_list)
+        summary_csv_path = './problem2_all_samples_summary.csv'
+        try:
+            df_summary.to_csv(summary_csv_path, index=False, encoding='utf-8-sig')
+            print(f"所有样本的关键结果摘要已保存到: {summary_csv_path}")
+        except Exception as e:
+            print(f"保存CSV摘要时发生错误: {e}")
+
+    print("\n" + "=" * 60)
+    print("问题2批量分析完成！")
+    print("=" * 60)
