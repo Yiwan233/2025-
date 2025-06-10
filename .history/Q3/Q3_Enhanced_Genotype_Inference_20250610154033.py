@@ -1624,7 +1624,7 @@ class GenotypeMatchEvaluator:
                         locus_correct += 1
                         correct_genotypes += 1
             
-            if locus_total >  0:
+            if locus_total > 0:
                 locus_results[locus] = {
                     'concordance_rate': locus_correct / locus_total,
                     'total_comparisons': locus_total,
@@ -1973,7 +1973,7 @@ class Q3EnhancedPipeline:
         }
     
     def generate_genotype_posterior_summary(self, mcmc_results: Dict, N: int, 
-                                      observed_loci: List[str]) -> Dict:
+                                          observed_loci: List[str]) -> Dict:
         """生成基因型后验分布摘要"""
         if not mcmc_results or not mcmc_results['samples']['genotypes']:
             return {}
@@ -1993,43 +1993,37 @@ class Q3EnhancedPipeline:
                     if locus in sample and contributor_idx < len(sample[locus]):
                         genotype = sample[locus][contributor_idx]
                         if genotype is not None:
-                            # 确保基因型是字符串格式用于统计
-                            if isinstance(genotype, tuple):
-                                genotype_str = ",".join(str(allele) for allele in genotype)
-                            else:
-                                genotype_str = str(genotype)
-                        
-                            genotype_counts[genotype_str] += 1
-            
+                            genotype_counts[genotype] += 1
+                
                 if genotype_counts:
                     # 计算后验概率
                     total_count = sum(genotype_counts.values())
                     genotype_probs = {gt: count/total_count for gt, count in genotype_counts.items()}
                     
                     # 找出最可能的基因型
-                    mode_genotype_str, mode_prob = max(genotype_probs.items(), key=lambda x: x[1])
+                    mode_genotype = max(genotype_probs.items(), key=lambda x: x[1])
                     
                     # 计算95%可信集合
                     sorted_genotypes = sorted(genotype_probs.items(), key=lambda x: x[1], reverse=True)
                     cumulative_prob = 0
                     credible_set_95 = []
                     
-                    for gt_str, prob in sorted_genotypes:
+                    for gt, prob in sorted_genotypes:
                         cumulative_prob += prob
-                        credible_set_95.append({'genotype': gt_str, 'probability': prob})
+                        credible_set_95.append((gt, prob))
                         if cumulative_prob >= 0.95:
                             break
-                
-                locus_summary[f'contributor_{contributor_idx+1}'] = {
-                    'mode_genotype': mode_genotype_str,
-                    'mode_probability': mode_prob,
-                    'posterior_distribution': genotype_probs,
-                    'credible_set_95': credible_set_95,
-                    'total_samples': total_count
-                }
-        
+                    
+                    locus_summary[f'contributor_{contributor_idx+1}'] = {
+                        'mode_genotype': mode_genotype[0],
+                        'mode_probability': mode_genotype[1],
+                        'posterior_distribution': dict(genotype_probs),
+                        'credible_set_95': credible_set_95,
+                        'total_samples': total_count
+                    }
+            
             summary[locus] = locus_summary
-    
+        
         # 添加MCMC质量指标
         summary['mcmc_quality'] = {
             'acceptance_rate_mx': mcmc_results['acceptance_rate_mx'],
@@ -2358,20 +2352,13 @@ class Q3EnhancedPipeline:
             'sample_id': results['sample_id'],
             'predicted_noc': results['predicted_noc'],
             'noc_confidence': results['noc_confidence'],
-            'posterior_summary': self._convert_tuples_to_strings(results['posterior_summary']),
-            'evaluation_results': self._convert_tuples_to_strings(results['evaluation_results']) if results['evaluation_results'] else None,
+            'posterior_summary': results['posterior_summary'],
+            'evaluation_results': results['evaluation_results'],
             'convergence_diagnostics': results['convergence_diagnostics'],
             'computation_time': results['computation_time'],
             'observed_loci': results['observed_loci'],
             'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
         }
-        
-        # 添加文件名解析信息（如果有的话）
-        if 'filename_parsing' in results:
-            simplified_results['filename_parsing'] = results['filename_parsing']
-        
-        if 'contributor_mapping' in results:
-            simplified_results['contributor_mapping'] = results['contributor_mapping']
         
         # 添加部分MCMC样本
         if results['mcmc_results'] is not None:
@@ -2381,98 +2368,24 @@ class Q3EnhancedPipeline:
                 mixture_samples = np.array(mcmc_results['samples']['mixture_ratios'])
                 simplified_results['sample_mixture_ratios'] = mixture_samples[indices].tolist()
                 
-                # 采样基因型样本并转换tuple为字符串
+                # 采样基因型样本
                 genotype_samples = mcmc_results['samples']['genotypes']
-                sampled_genotypes = [genotype_samples[i] for i in indices]
-                simplified_results['sample_genotypes'] = self._convert_genotype_samples_to_strings(sampled_genotypes)
+                simplified_results['sample_genotypes'] = [genotype_samples[i] for i in indices]
             else:
                 simplified_results['sample_mixture_ratios'] = mcmc_results['samples']['mixture_ratios']
-                simplified_results['sample_genotypes'] = self._convert_genotype_samples_to_strings(mcmc_results['samples']['genotypes'])
-        
-        simplified_results['mcmc_quality'] = {
-            'acceptance_rate_mx': mcmc_results['acceptance_rate_mx'],
-            'acceptance_rate_gt': mcmc_results['acceptance_rate_gt'],
-            'n_samples': mcmc_results['n_samples'],
-            'converged': mcmc_results['converged']
-        }
-    
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(simplified_results, f, ensure_ascii=False, indent=2)
-        
-            logger.info(f"分析结果已保存到: {output_path}")
-        
-        except Exception as e:
-            logger.error(f"保存结果失败: {e}")
-            # 尝试保存简化版本
-            try:
-                basic_results = {
-                    'sample_id': results['sample_id'],
-                    'predicted_noc': results['predicted_noc'],
-                    'noc_confidence': results['noc_confidence'],
-                    'computation_time': results['computation_time'],
-                    'observed_loci': results['observed_loci'],
-                    'error': f"Full results save failed: {str(e)}",
-                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
-                }
-                
-                basic_output_path = output_path.replace('.json', '_basic.json')
-                with open(basic_output_path, 'w', encoding='utf-8') as f:
-                    json.dump(basic_results, f, ensure_ascii=False, indent=2)
-                
-                logger.info(f"基础结果已保存到: {basic_output_path}")
-                
-            except Exception as e2:
-                logger.error(f"连基础结果保存都失败了: {e2}")
-    
-    def _convert_tuples_to_strings(self, obj):
-        """递归地将对象中的tuple转换为字符串表示"""
-        if obj is None:
-            return None
-        
-        if isinstance(obj, tuple):
-            # 将tuple转换为字符串格式 "allele1,allele2"
-            return ",".join(str(x) for x in obj)
-        
-        elif isinstance(obj, dict):
-            converted_dict = {}
-            for key, value in obj.items():
-                # 如果key是tuple，也需要转换
-                if isinstance(key, tuple):
-                    new_key = ",".join(str(x) for x in key)
-                else:
-                    new_key = key
+                simplified_results['sample_genotypes'] = mcmc_results['samples']['genotypes']
             
-                converted_dict[new_key] = self._convert_tuples_to_strings(value)
-            return converted_dict
-    
-        elif isinstance(obj, list):
-            return [self._convert_tuples_to_strings(item) for item in obj]
-    
-        else:
-            return obj
-    
-    def _convert_genotype_samples_to_strings(self, genotype_samples: List[Dict]) -> List[Dict]:
-        """将基因型样本中的tuple转换为字符串"""
-        converted_samples = []
+            simplified_results['mcmc_quality'] = {
+                'acceptance_rate_mx': mcmc_results['acceptance_rate_mx'],
+                'acceptance_rate_gt': mcmc_results['acceptance_rate_gt'],
+                'n_samples': mcmc_results['n_samples'],
+                'converged': mcmc_results['converged']
+            }
         
-        for sample in genotype_samples:
-            converted_sample = {}
-            for locus, genotype_set in sample.items():
-                converted_genotype_set = []
-                for genotype in genotype_set:
-                    if genotype is not None and isinstance(genotype, tuple):
-                        # 将基因型tuple转换为字符串
-                        converted_genotype = ",".join(str(allele) for allele in genotype)
-                        converted_genotype_set.append(converted_genotype)
-                    else:
-                        converted_genotype_set.append(str(genotype) if genotype is not None else None)
-                
-                converted_sample[locus] = converted_genotype_set
-            
-            converted_samples.append(converted_sample)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(simplified_results, f, ensure_ascii=False, indent=2)
         
-        return converted_samples
+        logger.info(f"分析结果已保存到: {output_path}")
 
 # =====================
 # 9. 主函数和应用接口

@@ -1973,7 +1973,7 @@ class Q3EnhancedPipeline:
         }
     
     def generate_genotype_posterior_summary(self, mcmc_results: Dict, N: int, 
-                                      observed_loci: List[str]) -> Dict:
+                                          observed_loci: List[str]) -> Dict:
         """生成基因型后验分布摘要"""
         if not mcmc_results or not mcmc_results['samples']['genotypes']:
             return {}
@@ -1993,48 +1993,42 @@ class Q3EnhancedPipeline:
                     if locus in sample and contributor_idx < len(sample[locus]):
                         genotype = sample[locus][contributor_idx]
                         if genotype is not None:
-                            # 确保基因型是字符串格式用于统计
-                            if isinstance(genotype, tuple):
-                                genotype_str = ",".join(str(allele) for allele in genotype)
-                            else:
-                                genotype_str = str(genotype)
-                        
-                            genotype_counts[genotype_str] += 1
-            
+                            genotype_counts[genotype] += 1
+                
                 if genotype_counts:
                     # 计算后验概率
                     total_count = sum(genotype_counts.values())
                     genotype_probs = {gt: count/total_count for gt, count in genotype_counts.items()}
                     
                     # 找出最可能的基因型
-                    mode_genotype_str, mode_prob = max(genotype_probs.items(), key=lambda x: x[1])
+                    mode_genotype = max(genotype_probs.items(), key=lambda x: x[1])
                     
                     # 计算95%可信集合
                     sorted_genotypes = sorted(genotype_probs.items(), key=lambda x: x[1], reverse=True)
                     cumulative_prob = 0
                     credible_set_95 = []
                     
-                    for gt_str, prob in sorted_genotypes:
+                    for gt, prob in sorted_genotypes:
                         cumulative_prob += prob
-                        credible_set_95.append({'genotype': gt_str, 'probability': prob})
+                        credible_set_95.append((gt, prob))
                         if cumulative_prob >= 0.95:
                             break
-                
-                locus_summary[f'contributor_{contributor_idx+1}'] = {
-                    'mode_genotype': mode_genotype_str,
-                    'mode_probability': mode_prob,
-                    'posterior_distribution': genotype_probs,
-                    'credible_set_95': credible_set_95,
-                    'total_samples': total_count
-                }
-        
+                    
+                    locus_summary[f'contributor_{contributor_idx+1}'] = {
+                        'mode_genotype': mode_genotype[0],
+                        'mode_probability': mode_genotype[1],
+                        'posterior_distribution': dict(genotype_probs),
+                        'credible_set_95': credible_set_95,
+                        'total_samples': total_count
+                    }
+            
             summary[locus] = locus_summary
-    
+        
         # 添加MCMC质量指标
         summary['mcmc_quality'] = {
             'acceptance_rate_mx': mcmc_results['acceptance_rate_mx'],
             'acceptance_rate_gt': mcmc_results['acceptance_rate_gt'],
-            'n_effective_samples': mcmc_results['n_samples'],
+            'n_samples': mcmc_results['n_samples'],
             'converged': mcmc_results.get('converged', False)
         }
         

@@ -2697,12 +2697,6 @@ def analyze_single_sample_from_attachment4(sample_id: str, enable_mcmc: bool = T
     pipeline.save_sample_result(result)
     pipeline.plot_sample_result(result)
     
-    # 创建可视化器
-    enhanced_viz = Q4EnhancedVisualization()
-
-    # 集成Q4分析结果
-    enhanced_viz.integrate_with_q4_results(result, "UPG-M分析结果")
-    
     return result
 
 def main():
@@ -2788,7 +2782,7 @@ def main():
         print(f"\n程序执行出错: {e}")
         import traceback
         traceback.print_exc()
-        
+    
     print(f"\n{'='*80}")
     print("UPG-M分析完成！")
     print(f"结果保存在目录: {config.OUTPUT_DIR}")

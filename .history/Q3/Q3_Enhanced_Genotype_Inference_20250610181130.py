@@ -2020,16 +2020,16 @@ class Q3EnhancedPipeline:
                         if cumulative_prob >= 0.95:
                             break
                 
-                locus_summary[f'contributor_{contributor_idx+1}'] = {
-                    'mode_genotype': mode_genotype_str,
-                    'mode_probability': mode_prob,
-                    'posterior_distribution': genotype_probs,
-                    'credible_set_95': credible_set_95,
-                    'total_samples': total_count
-                }
+                    locus_summary[f'contributor_{contributor_idx+1}'] = {
+                        'mode_genotype': mode_genotype_str,
+                        'mode_probability': mode_prob,
+                        'posterior_distribution': genotype_probs,
+                        'credible_set_95': credible_set_95,
+                        'total_samples': total_count
+                    }
         
             summary[locus] = locus_summary
-    
+        
         # 添加MCMC质量指标
         summary['mcmc_quality'] = {
             'acceptance_rate_mx': mcmc_results['acceptance_rate_mx'],

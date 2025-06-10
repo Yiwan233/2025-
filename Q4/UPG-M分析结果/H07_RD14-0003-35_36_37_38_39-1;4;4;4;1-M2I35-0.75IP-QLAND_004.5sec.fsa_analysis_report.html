@@ -1,0 +1,220 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q4 STR图谱降噪分析报告 - H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .section {
+            background: white;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .image-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .image-container {
+            text-align: center;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .summary-table th, .summary-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        .summary-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #ffc107;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>STR图谱智能降噪分析报告</h1>
+            <h2>样本: H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa</h2>
+            <p>基于UPG-M算法的混合STR图谱降噪与基因型推断</p>
+        </div>
+        
+        <div class="section">
+            <h2>📊 分析概要</h2>
+            <div class="metric-grid">
+
+                <div class="metric-card">
+                    <h3>峰过滤统计</h3>
+                    <p><strong>原始峰数:</strong> 75</p>
+                    <p><strong>降噪后峰数:</strong> 42</p>
+                    <p><strong>过滤峰数:</strong> 33</p>
+                    <p><strong>过滤率:</strong> 44.0%</p>
+                </div>
+                
+                <div class="metric-card">
+                    <h3>信号质量提升</h3>
+                    <p><strong>信噪比改善:</strong> 0.33x</p>
+                    <p><strong>动态范围:</strong> 6.16</p>
+                    <p><strong>信号一致性:</strong> 0.561</p>
+                </div>
+
+                <div class="metric-card">
+                    <h3>MCMC推断结果</h3>
+                    <p><strong>接受率:</strong> 0.221</p>
+                    <p><strong>有效样本数:</strong> 2400</p>
+                    <p><strong>收敛状态:</strong> ✅ 已收敛</p>
+                </div>
+
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔬 电泳图谱可视化</h2>
+            <div class="image-gallery">
+
+                <div class="image-container">
+                    <img src="H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa_electropherogram_comparison.png" alt="STR电泳图谱降噪前后对比">
+                    <h4>STR电泳图谱降噪前后对比</h4>
+                </div>
+
+                <div class="image-container">
+                    <img src="H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa_noise_analysis.png" alt="噪声过滤分析">
+                    <h4>噪声过滤分析</h4>
+                </div>
+
+                <div class="image-container">
+                    <img src="H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa_D16S539_detail.png" alt="D16S539 位点详细视图">
+                    <h4>D16S539 位点详细视图</h4>
+                </div>
+
+                <div class="image-container">
+                    <img src="H07_RD14-0003-35_36_37_38_39-1;4;4;4;1-M2I35-0.75IP-QLAND_004.5sec.fsa_D5S818_detail.png" alt="D5S818 位点详细视图">
+                    <h4>D5S818 位点详细视图</h4>
+                </div>
+
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📈 技术细节</h2>
+            <div class="highlight">
+                <h3>UPG-M算法特点</h3>
+                <ul>
+                    <li><strong>统一概率框架:</strong> 同时推断NoC、混合比例、基因型和降噪</li>
+                    <li><strong>智能峰分类:</strong> 基于梯度提升的峰分类器区分信号、Stutter和噪声</li>
+                    <li><strong>自适应CTA:</strong> 基于V5特征动态调整峰质量评估</li>
+                    <li><strong>RJMCMC采样:</strong> 跨维MCMC处理变维问题</li>
+                </ul>
+            </div>
+            
+            <table class="summary-table">
+                <tr>
+                    <th>分析步骤</th>
+                    <th>算法/方法</th>
+                    <th>主要功能</th>
+                </tr>
+                <tr>
+                    <td>1. 特征提取</td>
+                    <td>V5特征工程</td>
+                    <td>提取90+个STR图谱特征</td>
+                </tr>
+                <tr>
+                    <td>2. 峰分类</td>
+                    <td>梯度提升分类器</td>
+                    <td>区分真实信号、Stutter和噪声</td>
+                </tr>
+                <tr>
+                    <td>3. 自适应CTA</td>
+                    <td>多因子CTA计算</td>
+                    <td>动态调整峰质量评估阈值</td>
+                </tr>
+                <tr>
+                    <td>4. 降噪处理</td>
+                    <td>概率阈值过滤</td>
+                    <td>移除低质量和噪声峰</td>
+                </tr>
+                <tr>
+                    <td>5. 后验推断</td>
+                    <td>RJMCMC采样</td>
+                    <td>推断基因型和参数后验分布</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="section">
+            <h2>⚡ 分析性能</h2>
+
+            <p><strong>计算时间:</strong> 92.9 秒</p>
+            <p><strong>分析状态:</strong> ✅ 成功</p>
+            <p><strong>生成时间:</strong> 2025-06-10 15:37:58</p>
+        </div>
+        
+        <div class="section">
+            <h2>📝 结论与建议</h2>
+
+            <div class="highlight">
+                <h3>⚠️ 中等噪声样本</h3>
+                <p>样本质量中等，降噪效果良好，可用于后续分析。</p>
+            </div>
+
+        </div>
+    </div>
+</body>
+</html>
