@@ -1361,7 +1361,7 @@ class MGM_RF_Inferencer:
         return log_prior
 
     def propose_mixture_ratios(self, current_ratios: np.ndarray, 
-                            step_size: float = 0.05) -> np.ndarray:
+                            step_size: float = 0.5) -> np.ndarray:
         """使用与先验一致的提议分布"""
         N = len(current_ratios)
         
@@ -1436,9 +1436,9 @@ class MGM_RF_Inferencer:
         acceptance_details = []
         
         # 自适应步长
-        step_size = 0.15
-        adaptation_interval = 500
-        target_acceptance = 0.4
+        step_size = 0.8
+        adaptation_interval = 200
+        target_acceptance = 0.3
         
         for iteration in range(self.n_iterations):
             if iteration % 1000 == 0:
