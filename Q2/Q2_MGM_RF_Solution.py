@@ -139,10 +139,25 @@ class Q1FeatureEngineering:
     def process_peaks_simplified(self, sample_data):
         """简化的峰处理函数（继承自Q1）"""
         processed_data = []
+        sample_file = sample_data.iloc[0]['Sample File'] if not sample_data.empty else 'unknown'
+        
+        logger.info(f"处理样本 {sample_file} 的峰数据，原始数据行数: {len(sample_data)}")
         
         for _, sample_row in sample_data.iterrows():
             sample_file = sample_row['Sample File']
             marker = sample_row['Marker']
+            
+            # 统计每个样本的峰数量
+            peak_count = 0
+            for i in range(1, 101):
+                allele = sample_row.get(f'Allele {i}')
+                size = sample_row.get(f'Size {i}')
+                height = sample_row.get(f'Height {i}')
+                
+                if pd.notna(allele) and pd.notna(size) and pd.notna(height):
+                    peak_count += 1
+            
+            logger.info(f"位点 {marker}: 发现 {peak_count} 个峰")
             
             # 提取所有峰
             peaks = []
@@ -248,6 +263,93 @@ class Q1FeatureEngineering:
         logger.info(f"使用等比例假设: {true_ratios}")
         return contributor_ids, true_ratios
     
+    def calculate_imbalance_features(self, locus_groups):
+        """计算更通用的不平衡特征，适用于任意数量的等位基因"""
+        imbalance_features = {}
+        phr_values = []
+        general_imbalance_scores = []
+        
+        for marker, marker_group in locus_groups:
+            heights = marker_group['Height'].values
+            n_alleles = len(heights)
+            
+            if n_alleles == 2:
+                # 传统PHR计算
+                phr = min(heights) / max(heights) if max(heights) > 0 else 0
+                phr_values.append(phr)
+                
+            if n_alleles >= 2:
+                # 通用不平衡度量
+                # 1. 变异系数
+                cv = np.std(heights) / np.mean(heights) if np.mean(heights) > 0 else 0
+                general_imbalance_scores.append(cv)
+                
+                # 2. 归一化峰高的熵
+                if heights.sum() > 0:
+                    probs = heights / heights.sum()
+                    entropy = self.calculate_entropy(probs)
+                    # 转换为不平衡分数（熵越高越平衡）
+                    max_entropy = np.log(n_alleles)
+                    imbalance_score = 1 - (entropy / max_entropy) if max_entropy > 0 else 0
+                    general_imbalance_scores.append(imbalance_score)
+        
+        # 计算特征
+        if phr_values:
+            imbalance_features['avg_phr'] = np.mean(phr_values)
+            imbalance_features['std_phr'] = np.std(phr_values) if len(phr_values) > 1 else 0
+            imbalance_features['min_phr'] = np.min(phr_values)
+            imbalance_features['median_phr'] = np.median(phr_values)
+            imbalance_features['num_loci_with_phr'] = len(phr_values)
+            imbalance_features['num_severe_imbalance_loci'] = sum(phr <= config.PHR_IMBALANCE_THRESHOLD for phr in phr_values)
+            imbalance_features['ratio_severe_imbalance_loci'] = imbalance_features['num_severe_imbalance_loci'] / len(phr_values)
+        else:
+            # 使用通用不平衡指标
+            if general_imbalance_scores:
+                avg_imbalance = np.mean(general_imbalance_scores)
+                imbalance_features['avg_phr'] = max(0.1, 1 - avg_imbalance)  # 转换为类PHR范围
+                imbalance_features['std_phr'] = np.std(general_imbalance_scores) if len(general_imbalance_scores) > 1 else 0
+                imbalance_features['min_phr'] = max(0.1, 1 - max(general_imbalance_scores))
+                imbalance_features['median_phr'] = max(0.1, 1 - np.median(general_imbalance_scores))
+                imbalance_features['num_loci_with_phr'] = len(general_imbalance_scores)
+                imbalance_features['num_severe_imbalance_loci'] = sum(score > 0.5 for score in general_imbalance_scores)
+                imbalance_features['ratio_severe_imbalance_loci'] = imbalance_features['num_severe_imbalance_loci'] / len(general_imbalance_scores) if len(general_imbalance_scores) > 0 else 0
+            else:
+                # 默认值
+                imbalance_features['avg_phr'] = 0.5
+                imbalance_features['std_phr'] = 0
+                imbalance_features['min_phr'] = 0.5
+                imbalance_features['median_phr'] = 0.5
+                imbalance_features['num_loci_with_phr'] = 0
+                imbalance_features['num_severe_imbalance_loci'] = 0
+                imbalance_features['ratio_severe_imbalance_loci'] = 0
+        
+        return imbalance_features
+    
+    def calculate_locus_entropy_features(self, locus_groups):
+        """计算位点熵特征，确保有意义的结果"""
+        locus_entropies = []
+        
+        for marker, marker_group in locus_groups:
+            heights = marker_group['Height'].values
+            
+            if len(heights) > 0 and heights.sum() > 0:
+                # 归一化高度
+                probs = heights / heights.sum()
+                entropy = self.calculate_entropy(probs)
+                
+                # 标准化熵（相对于最大可能熵）
+                max_entropy = np.log(len(heights))
+                normalized_entropy = entropy / max_entropy if max_entropy > 0 else entropy
+                
+                locus_entropies.append(normalized_entropy)
+        
+        # 如果没有有效的熵值，使用基于等位基因数的估计
+        if not locus_entropies:
+            # 使用一个合理的默认值
+            return 0.5
+        
+        return np.mean(locus_entropies)
+    
     def extract_v5_features(self, sample_file, sample_peaks):
         """提取V5特征集（继承并扩展Q1的特征提取）"""
         if sample_peaks.empty:
@@ -289,26 +391,9 @@ class Q1FeatureEngineering:
             features['skewness_peak_height'] = stats.skew(all_heights) if total_peaks > 2 else 0
             features['kurtosis_peak_height'] = stats.kurtosis(all_heights, fisher=False) if total_peaks > 3 else 0
             
-            # PHR相关特征
-            phr_values = []
-            for marker, marker_group in locus_groups:
-                if len(marker_group) == 2:
-                    heights = marker_group['Height'].values
-                    phr = min(heights) / max(heights) if max(heights) > 0 else 0
-                    phr_values.append(phr)
-            
-            if phr_values:
-                features['avg_phr'] = np.mean(phr_values)
-                features['std_phr'] = np.std(phr_values) if len(phr_values) > 1 else 0
-                features['min_phr'] = np.min(phr_values)
-                features['median_phr'] = np.median(phr_values)
-                features['num_loci_with_phr'] = len(phr_values)
-                features['num_severe_imbalance_loci'] = sum(phr <= config.PHR_IMBALANCE_THRESHOLD for phr in phr_values)
-                features['ratio_severe_imbalance_loci'] = features['num_severe_imbalance_loci'] / len(phr_values)
-            else:
-                for key in ['avg_phr', 'std_phr', 'min_phr', 'median_phr', 'num_loci_with_phr', 
-                           'num_severe_imbalance_loci', 'ratio_severe_imbalance_loci']:
-                    features[key] = 0
+            # 使用新的不平衡特征计算方法
+            imbalance_features = self.calculate_imbalance_features(locus_groups)
+            features.update(imbalance_features)
             
             # 峰高分布多峰性
             try:
@@ -324,6 +409,21 @@ class Q1FeatureEngineering:
             saturated_peaks = (sample_peaks['Original_Height'] >= config.SATURATION_THRESHOLD).sum()
             features['num_saturated_peaks'] = saturated_peaks
             features['ratio_saturated_peaks'] = saturated_peaks / total_peaks
+        else:
+            # 如果没有峰数据，设置默认值
+            logger.warning(f"样本 {sample_file} 没有有效峰数据，使用默认特征值")
+            features['avg_peak_height'] = 0
+            features['std_peak_height'] = 0
+            features['skewness_peak_height'] = 0
+            features['kurtosis_peak_height'] = 0
+            features['modality_peak_height'] = 1
+            features['num_saturated_peaks'] = 0
+            features['ratio_saturated_peaks'] = 0
+            
+            # PHR相关特征默认值
+            for key in ['avg_phr', 'std_phr', 'min_phr', 'median_phr', 'num_loci_with_phr', 
+                    'num_severe_imbalance_loci', 'ratio_severe_imbalance_loci']:
+                features[key] = 0
         
         # C类：信息论及图谱复杂度特征
         if len(locus_heights) > 0:
@@ -334,18 +434,8 @@ class Q1FeatureEngineering:
             else:
                 features['inter_locus_balance_entropy'] = 0
             
-            # 平均位点等位基因分布熵
-            locus_entropies = []
-            for marker, marker_group in locus_groups:
-                if len(marker_group) > 1:
-                    heights = marker_group['Height'].values
-                    height_sum = heights.sum()
-                    if height_sum > 0:
-                        probs = heights / height_sum
-                        entropy = self.calculate_entropy(probs)
-                        locus_entropies.append(entropy)
-            
-            features['avg_locus_allele_entropy'] = np.mean(locus_entropies) if locus_entropies else 0
+            # 使用新的熵计算方法
+            features['avg_locus_allele_entropy'] = self.calculate_locus_entropy_features(locus_groups)
             
             # 样本整体峰高分布熵
             if total_peaks > 0:
@@ -361,8 +451,22 @@ class Q1FeatureEngineering:
             effective_loci_count = len(locus_groups)
             features['num_loci_with_effective_alleles'] = effective_loci_count
             features['num_loci_no_effective_alleles'] = max(0, 20 - effective_loci_count)
+        else:
+            features['inter_locus_balance_entropy'] = 0
+            features['avg_locus_allele_entropy'] = 0
+            features['peak_height_entropy'] = 0
+            features['num_loci_with_effective_alleles'] = 0
+            features['num_loci_no_effective_alleles'] = 20
         
         # D类：DNA降解与信息丢失特征
+        # 需要定义 phr_values 用于后续计算
+        phr_values = []
+        for marker, marker_group in locus_groups:
+            if len(marker_group) == 2:
+                heights = marker_group['Height'].values
+                phr = min(heights) / max(heights) if max(heights) > 0 else 0
+                phr_values.append(phr)
+        
         if total_peaks > 1 and len(np.unique(all_heights)) > 1 and len(np.unique(all_sizes)) > 1:
             features['height_size_correlation'] = np.corrcoef(all_heights, all_sizes)[0, 1]
             features['height_size_slope'] = self.calculate_ols_slope(all_sizes, all_heights)
@@ -932,9 +1036,9 @@ class MGM_RF_Inferencer:
         # 综合不平衡强度
         imbalance_strength = np.mean(imbalance_signals)
         
-        logger.info(f"V5不平衡信号: 偏度={skewness:.3f}, 熵={avg_entropy:.3f}, "
-                    f"失衡比例={ratio_imbalance:.3f}, CV={peak_height_cv:.3f}")
-        logger.info(f"综合不平衡强度: {imbalance_strength:.3f}")
+        # logger.info(f"V5不平衡信号: 偏度={skewness:.3f}, 熵={avg_entropy:.3f}, "
+        #             f"失衡比例={ratio_imbalance:.3f}, CV={peak_height_cv:.3f}")
+        # logger.info(f"综合不平衡强度: {imbalance_strength:.3f}")
         
         # 根据不平衡强度和贡献者数量设计alpha参数
         if imbalance_strength > 0.7:  # 强不平衡信号
@@ -971,7 +1075,7 @@ class MGM_RF_Inferencer:
             # 接近无信息先验，但略微鼓励平衡
             alpha = np.ones(N) * 1.2
         
-        logger.info(f"计算得到的alpha参数: {alpha}")
+        # logger.info(f"计算得到的alpha参数: {alpha}")
         
         return alpha
     
@@ -986,8 +1090,19 @@ class MGM_RF_Inferencer:
             (predicted_noc, confidence, v5_features)
         """
         # 处理峰数据
-        sample_peaks = self.q1_feature_engineering.process_peaks_simplified(sample_data)
+        logger.info(f"原始样本数据行数: {len(sample_data)}")
+        logger.info(f"原始样本包含的位点: {sample_data['Marker'].unique()}")
         
+        sample_peaks = self.q1_feature_engineering.process_peaks_simplified(sample_data)
+        logger.info(f"处理后峰数据行数: {len(sample_peaks)}")
+        
+        if not sample_peaks.empty:
+            logger.info(f"峰数据统计:")
+            logger.info(f"  位点数量: {sample_peaks['Marker'].nunique()}")
+            logger.info(f"  峰高范围: {sample_peaks['Height'].min():.1f} - {sample_peaks['Height'].max():.1f}")
+            logger.info(f"  峰高均值: {sample_peaks['Height'].mean():.1f}")
+        else:
+            logger.error("峰数据处理后为空！")
         # 提取V5特征
         sample_file = sample_data.iloc[0]['Sample File']
         v5_features = self.q1_feature_engineering.extract_v5_features(sample_file, sample_peaks)
@@ -1237,7 +1352,7 @@ class MGM_RF_Inferencer:
             
             # 混合V5特征先验和真值先验
             alpha = 0.7 * alpha + 0.3 * alpha_from_truth
-            logger.info(f"融合真值信息后的alpha: {alpha}")
+            # logger.info(f"融合真值信息后的alpha: {alpha}")
         
         # 计算Dirichlet分布的对数概率密度
         log_prior = (gammaln(np.sum(alpha)) - np.sum(gammaln(alpha)) + 
@@ -1321,7 +1436,7 @@ class MGM_RF_Inferencer:
         acceptance_details = []
         
         # 自适应步长
-        step_size = 0.05
+        step_size = 0.15
         adaptation_interval = 500
         target_acceptance = 0.4
         
